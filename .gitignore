@@ -1,0 +1,3 @@
+__test__/
+.env*.local
+/blaze
