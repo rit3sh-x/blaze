@@ -42,12 +42,12 @@ func (mc *MigrateCommand) Execute() error {
 	if err != nil {
 		return fmt.Errorf("failed to generate migration: %v", err)
 	}
-	
-	queryFilePath := filepath.Join(migrationPath, "query.sql")
+
+	queryFilePath := filepath.Join(migrationPath, constants.QUERY_FILE_NAME)
 
 	err = os.WriteFile(queryFilePath, []byte(migrationSQL), 0644)
 	if err != nil {
-		return fmt.Errorf("failed to write query.sql file: %v", err)
+		return fmt.Errorf("failed to write %s file: %v", constants.QUERY_FILE_NAME, err)
 	}
 
 	fmt.Printf("%sMigration created successfully:%s\n", constants.GREEN, constants.RESET)

@@ -202,7 +202,6 @@ func (av *AttributeValidator) isDirective(attrName string) bool {
 	directives := []string{
 		constants.FIELD_ATTR_PRIMARY_KEY,
 		constants.FIELD_ATTR_UNIQUE,
-		constants.FIELD_ATTR_UPDATED_AT,
 	}
 
 	for _, directive := range directives {
@@ -411,7 +410,7 @@ func (av *AttributeValidator) ParseAttributeFromString(attrStr string) (*Attribu
 			if attrValue == "" {
 				return nil, fmt.Errorf("@%s attribute requires non-empty parameters", attrName)
 			}
-		case constants.FIELD_ATTR_PRIMARY_KEY, constants.FIELD_ATTR_UNIQUE, constants.FIELD_ATTR_UPDATED_AT:
+		case constants.FIELD_ATTR_PRIMARY_KEY, constants.FIELD_ATTR_UNIQUE:
 			return nil, fmt.Errorf("@%s attribute does not accept parameters", attrName)
 		}
 
@@ -446,7 +445,6 @@ func (av *AttributeValidator) isValidAttributeName(name string) bool {
 		constants.FIELD_ATTR_UNIQUE,
 		constants.FIELD_ATTR_DEFAULT,
 		constants.FIELD_ATTR_RELATION,
-		constants.FIELD_ATTR_UPDATED_AT,
 	}
 
 	for _, valid := range validAttributes {

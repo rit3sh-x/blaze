@@ -27,8 +27,6 @@ func (av *DirectiveValidator) ValidateDirective(attr *FieldDirective, fieldType 
 		return av.validatePrimaryKeyDirective(attr, isOptional, isArray)
 	case constants.FIELD_ATTR_UNIQUE:
 		return av.validateUniqueDirective(attr, isArray)
-	case constants.FIELD_ATTR_UPDATED_AT:
-		return av.validateUpdatedAtDirective(attr, fieldType, isArray)
 	default:
 		return fmt.Errorf("unknown field directive '@%s'", attr.Name)
 	}
@@ -53,19 +51,6 @@ func (av *DirectiveValidator) validateUniqueDirective(attr *FieldDirective, isAr
 	}
 	if attr.Value != nil {
 		return fmt.Errorf("@unique directive does not accept parameters")
-	}
-	return nil
-}
-
-func (av *DirectiveValidator) validateUpdatedAtDirective(attr *FieldDirective, fieldType string, isArray bool) error {
-	if fieldType != string(constants.TIMESTAMP) && fieldType != string(constants.DATE) {
-		return fmt.Errorf("@updatedat can only be used on timestamp or date fields, got %s", fieldType)
-	}
-	if isArray {
-		return fmt.Errorf("@updatedat cannot be used on array fields")
-	}
-	if attr.Value != nil {
-		return fmt.Errorf("@updatedat directive does not accept parameters")
 	}
 	return nil
 }
@@ -159,18 +144,10 @@ func GetUniqueDirective(attrs []*FieldDirective) *FieldDirective {
 	return GetDirectiveByName(attrs, constants.FIELD_ATTR_UNIQUE)
 }
 
-func GetUpdatedAtDirective(attrs []*FieldDirective) *FieldDirective {
-	return GetDirectiveByName(attrs, constants.FIELD_ATTR_UPDATED_AT)
-}
-
 func HasPrimaryKey(attrs []*FieldDirective) bool {
 	return HasDirective(attrs, constants.FIELD_ATTR_PRIMARY_KEY)
 }
 
 func HasUnique(attrs []*FieldDirective) bool {
 	return HasDirective(attrs, constants.FIELD_ATTR_UNIQUE)
-}
-
-func HasUpdatedAt(attrs []*FieldDirective) bool {
-	return HasDirective(attrs, constants.FIELD_ATTR_UPDATED_AT)
 }

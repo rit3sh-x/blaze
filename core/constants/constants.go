@@ -8,6 +8,7 @@ const (
 	TYPES_DIR            = CLIENT_DIR + "/types"
 	PROVIDER_DIR         = CLIENT_DIR + "/provider"
 	MIGRATION_TABLE_NAME = "_blaze_migrations"
+	QUERY_FILE_NAME      = "query.sql"
 )
 
 const (
@@ -65,7 +66,6 @@ const (
 	FIELD_ATTR_UNIQUE      = "unique"
 	FIELD_ATTR_DEFAULT     = "default"
 	FIELD_ATTR_RELATION    = "relation"
-	FIELD_ATTR_UPDATED_AT  = "updatedAt"
 )
 
 const (

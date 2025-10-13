@@ -128,13 +128,6 @@ func (f *Field) IsUnique() bool {
 	return f.AttributeDefinition.IsUnique()
 }
 
-func (f *Field) IsUpdatedAt() bool {
-	if f.AttributeDefinition == nil {
-		return false
-	}
-	return f.HasAttribute(constants.FIELD_ATTR_UPDATED_AT)
-}
-
 func (f *Field) GetKind() string {
 	if f.AttributeDefinition == nil {
 		return ""
@@ -196,13 +189,6 @@ func (f *Field) IsRequiredField() bool {
 		return false
 	}
 	return f.AttributeDefinition.IsOptional
-}
-
-func (f *Field) IsSystemManaged() bool {
-	if f.AttributeDefinition == nil {
-		return false
-	}
-	return f.AttributeDefinition.HasAttribute(constants.FIELD_ATTR_UPDATED_AT)
 }
 
 func (f *Field) Clone() *Field {
