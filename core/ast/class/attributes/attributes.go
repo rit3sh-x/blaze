@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/rit3sh-x/blaze/core/ast/class/directives"
-	"github.com/rit3sh-x/blaze/core/ast/class/relations"
 	"github.com/rit3sh-x/blaze/core/ast/enum"
 	"github.com/rit3sh-x/blaze/core/ast/field"
 	"github.com/rit3sh-x/blaze/core/constants"
@@ -15,13 +14,11 @@ import (
 type ClassAttributes struct {
 	Fields     []*field.Field
 	Directives []*directives.ClassDirective
-	Relations  []*relations.Relation
 }
 
 type AttributeParser struct {
 	fieldValidator     *field.FieldValidator
 	directiveValidator *directives.DirectiveValidator
-	relationValidator  *relations.RelationValidator
 	classNamePattern   *regexp.Regexp
 	fieldPattern       *regexp.Regexp
 }
@@ -30,7 +27,6 @@ func NewAttributeParser(enums map[string]*enum.Enum) *AttributeParser {
 	return &AttributeParser{
 		fieldValidator:     field.NewFieldValidator(enums),
 		directiveValidator: directives.NewDirectiveValidator(),
-		relationValidator:  relations.NewRelationValidator(),
 		classNamePattern:   regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`),
 		fieldPattern:       regexp.MustCompile(`^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+(.+)$`),
 	}
@@ -49,7 +45,6 @@ func (ap *AttributeParser) ParseClassContent(classContent string, className stri
 	attributes := &ClassAttributes{
 		Fields:     []*field.Field{},
 		Directives: []*directives.ClassDirective{},
-		Relations:  []*relations.Relation{},
 	}
 
 	fieldPosition := 0
@@ -111,10 +106,6 @@ func (ap *AttributeParser) parseClassDirectiveOrRelation(line string, attributes
 		directiveName = strings.TrimSpace(line)
 	}
 
-	if directiveName == constants.CLASS_ATTR_RELATION {
-		return ap.parseClassRelation(params, attributes)
-	}
-
 	return ap.parseClassDirective(directiveName, params, attributes)
 }
 
@@ -163,20 +154,6 @@ func (ap *AttributeParser) parseClassDirective(name, params string, attributes *
 	return nil
 }
 
-func (ap *AttributeParser) parseClassRelation(params string, attributes *ClassAttributes) error {
-	if params == "" {
-		return fmt.Errorf("@@relation requires parameters")
-	}
-
-	relation, err := ap.relationValidator.ParseRelationFromString(params)
-	if err != nil {
-		return fmt.Errorf("failed to parse @@relation: %v", err)
-	}
-
-	attributes.Relations = append(attributes.Relations, relation)
-	return nil
-}
-
 func (ap *AttributeParser) parseFieldArray(params string) ([]string, error) {
 	if params == "" {
 		return nil, fmt.Errorf("field array cannot be empty")
@@ -216,12 +193,6 @@ func (ap *AttributeParser) validateClassAttributes(attributes *ClassAttributes) 
 		return fmt.Errorf("directive validation failed: %v", err)
 	}
 
-	for i, relation := range attributes.Relations {
-		if err := ap.relationValidator.ValidateRelation(relation); err != nil {
-			return fmt.Errorf("relation %d validation failed: %v", i+1, err)
-		}
-	}
-
 	for i, field := range attributes.Fields {
 		if err := ap.fieldValidator.ValidateField(field); err != nil {
 			return fmt.Errorf("field %d validation failed: %v", i+1, err)
@@ -253,14 +224,6 @@ func (ap *AttributeParser) validateDirectiveFieldReferences(attributes *ClassAtt
 				if !fieldNames[fieldName] {
 					return fmt.Errorf("directive @@%s references non-existent field '%s'", directive.Name, fieldName)
 				}
-			}
-		}
-	}
-
-	for _, relation := range attributes.Relations {
-		for _, fieldName := range relation.GetSourceFields() {
-			if !fieldNames[fieldName] {
-				return fmt.Errorf("relation references non-existent source field '%s'", fieldName)
 			}
 		}
 	}
@@ -374,16 +337,6 @@ func (ca *ClassAttributes) GetPrimaryKeyFields() []string {
 	return []string{}
 }
 
-func (ca *ClassAttributes) GetRelationsByTargetClass(targetClass string) []*relations.Relation {
-	var result []*relations.Relation
-	for _, relation := range ca.Relations {
-		if relation.ToClass == targetClass {
-			result = append(result, relation)
-		}
-	}
-	return result
-}
-
 func (ca *ClassAttributes) String() string {
 	var parts []string
 
@@ -395,10 +348,6 @@ func (ca *ClassAttributes) String() string {
 		parts = append(parts, "  "+directive.String())
 	}
 
-	for _, relation := range ca.Relations {
-		parts = append(parts, "  @@relation("+relation.String()+")")
-	}
-
 	return strings.Join(parts, "\n")
 }
 
@@ -408,8 +357,4 @@ func (ap *AttributeParser) GetFieldValidator() *field.FieldValidator {
 
 func (ap *AttributeParser) GetDirectiveValidator() *directives.DirectiveValidator {
 	return ap.directiveValidator
-}
-
-func (ap *AttributeParser) GetRelationValidator() *relations.RelationValidator {
-	return ap.relationValidator
 }

@@ -267,7 +267,7 @@ func (dv *DefaultValidator) validateEnumDefault(defaultStr string, enumType stri
 
 	return &DefaultValue{
 		Value:    cleanValue,
-		Type:     "enum",
+		Type:     constants.KEYWORD_ENUM,
 		DataType: enumType,
 		IsArray:  false,
 	}, nil

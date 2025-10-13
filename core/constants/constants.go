@@ -73,7 +73,6 @@ const (
 	CLASS_ATTR_UNIQUE      = "unique"
 	CLASS_ATTR_INDEX       = "index"
 	CLASS_ATTR_TEXT_INDEX  = "textIndex"
-	CLASS_ATTR_RELATION    = "relation"
 	CLASS_ATTR_CHECK       = "check"
 )
 

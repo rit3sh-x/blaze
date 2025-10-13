@@ -240,15 +240,6 @@ func (c *Class) GetPrimaryKeyFields() []string {
 	return c.Attributes.GetPrimaryKeyFields()
 }
 
-func (c *Class) HasRelationFields() bool {
-	for _, field := range c.Attributes.Fields {
-		if field.HasRelation() {
-			return true
-		}
-	}
-	return len(c.Attributes.Relations) > 0
-}
-
 func (c *Class) GetRelationFields() []*field.Field {
 	return c.Attributes.GetRelationFields()
 }

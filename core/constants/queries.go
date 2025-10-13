@@ -17,7 +17,7 @@ $func$;
 const BLAZE_TABLE_QUERY = `
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TABLE IF NOT EXISTS _blaze_migrations (
+CREATE TABLE IF NOT EXISTS "_blaze_migrations" (
 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 checksum VARCHAR(64) UNIQUE NOT NULL,
 applied_at TIMESTAMP(3) UNIQUE NOT NULL DEFAULT now(),
@@ -33,7 +33,7 @@ checksum,
 applied_at,
 migration_name,
 step_count
-FROM _blaze_migrations
+FROM "_blaze_migrations"
 ORDER BY applied_at DESC;
 `
 
@@ -69,7 +69,7 @@ func TableTypes(input string) string {
     ON c.udt_name = t.typname
     LEFT JOIN pg_enum e
     ON t.oid = e.enumtypid
-    WHERE c.table_name = '%s'
+    WHERE c.table_name = "%s"
     AND c.table_schema NOT IN ('pg_catalog', 'information_schema')
     GROUP BY c.column_name, c.data_type, c.is_nullable, c.column_default, t.typname, c.ordinal_position, c.udt_name
     ORDER BY c.ordinal_position;
@@ -86,7 +86,7 @@ func TableConstraints(input string) string {
     JOIN information_schema.key_column_usage kcu
     ON tc.constraint_name = kcu.constraint_name
     AND tc.table_schema = kcu.table_schema
-    WHERE tc.table_name = '%s'
+    WHERE tc.table_name = "%s"
     AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
     ORDER BY tc.constraint_type, kcu.column_name;
     `, input)
@@ -111,7 +111,7 @@ func TableRelations(input string) string {
     JOIN information_schema.constraint_column_usage AS ccu
     ON ccu.constraint_name = tc.constraint_name
     WHERE tc.constraint_type = 'FOREIGN KEY'
-    AND tc.table_name = '%s';
+    AND tc.table_name = "%s";
     `, input)
 }
 
@@ -127,10 +127,8 @@ func TableIndexes(input string) string {
     JOIN pg_class i ON i.oid = idx.indexrelid
     JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(idx.indkey)
     WHERE t.relkind = 'r' 
-    AND t.relname = '%s'
+    AND t.relname = "%s"
     GROUP BY i.relname, idx.indisunique, idx.indisprimary
     ORDER BY i.relname;
     `, input)
 }
-
-// TODO

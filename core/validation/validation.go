@@ -202,13 +202,6 @@ func (sv *SchemaValidator) nameRelations() {
 				relation.Name = relationName
 			}
 		}
-
-		for _, relation := range cls.Attributes.Relations {
-			if relation.Name == "" {
-				relationName := sv.generateRelationName(relation.FromClass, relation.ToClass, relation.From, relation.To)
-				relation.Name = relationName
-			}
-		}
 	}
 }
 

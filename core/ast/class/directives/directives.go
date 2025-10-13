@@ -36,22 +36,22 @@ func (av *DirectiveValidator) ValidateClassDirective(attr *ClassDirective) error
 	case constants.CLASS_ATTR_CHECK:
 		return av.validateClassCheckDirective(attr)
 	default:
-		return fmt.Errorf("unknown class directive '@%s'", attr.Name)
+		return fmt.Errorf("unknown class directive '@@%s'", attr.Name)
 	}
 }
 
 func (av *DirectiveValidator) validateClassPrimaryKeyDirective(attr *ClassDirective) error {
 	if attr.Value == nil {
-		return fmt.Errorf("@primaryKey directive requires field array parameter")
+		return fmt.Errorf("@@primaryKey directive requires field array parameter")
 	}
 
 	fields, ok := attr.Value.([]string)
 	if !ok {
-		return fmt.Errorf("@primaryKey directive value must be an array of field names")
+		return fmt.Errorf("@@primaryKey directive value must be an array of field names")
 	}
 
 	if len(fields) == 0 {
-		return fmt.Errorf("@primaryKey directive requires at least one field")
+		return fmt.Errorf("@@primaryKey directive requires at least one field")
 	}
 
 	return nil
@@ -59,16 +59,16 @@ func (av *DirectiveValidator) validateClassPrimaryKeyDirective(attr *ClassDirect
 
 func (av *DirectiveValidator) validateClassUniqueDirective(attr *ClassDirective) error {
 	if attr.Value == nil {
-		return fmt.Errorf("@unique directive requires field array parameter")
+		return fmt.Errorf("@@unique directive requires field array parameter")
 	}
 
 	fields, ok := attr.Value.([]string)
 	if !ok {
-		return fmt.Errorf("@unique directive value must be an array of field names")
+		return fmt.Errorf("@@unique directive value must be an array of field names")
 	}
 
 	if len(fields) == 0 {
-		return fmt.Errorf("@unique directive requires at least one field")
+		return fmt.Errorf("@@unique directive requires at least one field")
 	}
 
 	return nil
@@ -76,16 +76,16 @@ func (av *DirectiveValidator) validateClassUniqueDirective(attr *ClassDirective)
 
 func (av *DirectiveValidator) validateClassIndexDirective(attr *ClassDirective) error {
 	if attr.Value == nil {
-		return fmt.Errorf("@index directive requires field array parameter")
+		return fmt.Errorf("@@index directive requires field array parameter")
 	}
 
 	fields, ok := attr.Value.([]string)
 	if !ok {
-		return fmt.Errorf("@index directive value must be an array of field names")
+		return fmt.Errorf("@@index directive value must be an array of field names")
 	}
 
 	if len(fields) == 0 {
-		return fmt.Errorf("@index directive requires at least one field")
+		return fmt.Errorf("@@index directive requires at least one field")
 	}
 
 	return nil
@@ -93,16 +93,16 @@ func (av *DirectiveValidator) validateClassIndexDirective(attr *ClassDirective) 
 
 func (av *DirectiveValidator) validateClassTextIndexDirective(attr *ClassDirective) error {
 	if attr.Value == nil {
-		return fmt.Errorf("@textIndex directive requires field array parameter")
+		return fmt.Errorf("@@textIndex directive requires field array parameter")
 	}
 
 	fields, ok := attr.Value.([]string)
 	if !ok {
-		return fmt.Errorf("@textIndex directive value must be an array of field names")
+		return fmt.Errorf("@@textIndex directive value must be an array of field names")
 	}
 
 	if len(fields) == 0 {
-		return fmt.Errorf("@textIndex directive requires at least one field")
+		return fmt.Errorf("@@textIndex directive requires at least one field")
 	}
 
 	return nil
@@ -110,17 +110,17 @@ func (av *DirectiveValidator) validateClassTextIndexDirective(attr *ClassDirecti
 
 func (av *DirectiveValidator) validateClassCheckDirective(attr *ClassDirective) error {
 	if attr.Value == nil {
-		return fmt.Errorf("@check directive requires a constraint expression")
+		return fmt.Errorf("@@check directive requires a constraint expression")
 	}
 
 	constraint, ok := attr.Value.(string)
 	if !ok {
-		return fmt.Errorf("@check directive value must be a string expression")
+		return fmt.Errorf("@@check directive value must be a string expression")
 	}
 
 	constraint = strings.TrimSpace(constraint)
 	if len(constraint) == 0 {
-		return fmt.Errorf("@check directive requires a non-empty constraint expression")
+		return fmt.Errorf("@@check directive requires a non-empty constraint expression")
 	}
 
 	return nil
@@ -141,7 +141,7 @@ func (av *DirectiveValidator) ValidateMultipleClassDirectives(attrs []*ClassDire
 		directiveCount[attr.Name]++
 
 		if directiveCount[attr.Name] > 1 {
-			return fmt.Errorf("duplicate class directive '@%s' found", attr.Name)
+			return fmt.Errorf("duplicate class directive '@@%s' found", attr.Name)
 		}
 
 		if err := av.ValidateClassDirective(attr); err != nil {
@@ -206,7 +206,7 @@ func HasClassCheck(attrs []*ClassDirective) bool {
 }
 
 func (cd *ClassDirective) String() string {
-	return fmt.Sprintf("@%s", cd.Name)
+	return fmt.Sprintf("@@%s", cd.Name)
 }
 
 func (cd *ClassDirective) IsParameterized() bool {
@@ -215,12 +215,12 @@ func (cd *ClassDirective) IsParameterized() bool {
 
 func (cd *ClassDirective) GetFields() ([]string, error) {
 	if cd.Value == nil {
-		return nil, fmt.Errorf("directive @%s has no value", cd.Name)
+		return nil, fmt.Errorf("directive @@%s has no value", cd.Name)
 	}
 
 	fields, ok := cd.Value.([]string)
 	if !ok {
-		return nil, fmt.Errorf("directive @%s value is not a string array", cd.Name)
+		return nil, fmt.Errorf("directive @@%s value is not a string array", cd.Name)
 	}
 
 	return fields, nil
@@ -228,12 +228,12 @@ func (cd *ClassDirective) GetFields() ([]string, error) {
 
 func (cd *ClassDirective) GetConstraint() (string, error) {
 	if cd.Value == nil {
-		return "", fmt.Errorf("directive @%s has no value", cd.Name)
+		return "", fmt.Errorf("directive @@%s has no value", cd.Name)
 	}
 
 	constraint, ok := cd.Value.(string)
 	if !ok {
-		return "", fmt.Errorf("directive @%s value is not a string", cd.Name)
+		return "", fmt.Errorf("directive @@%s value is not a string", cd.Name)
 	}
 
 	return constraint, nil
