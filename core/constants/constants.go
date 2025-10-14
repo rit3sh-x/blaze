@@ -4,7 +4,7 @@ const (
 	PROJECT_DIR          = "blaze"
 	SCHEMA_FILE          = PROJECT_DIR + "/blaze.schema"
 	MIGRATION_DIR        = PROJECT_DIR + "/migrations"
-	CLIENT_DIR           = PROJECT_DIR + "/client"
+	CLIENT_DIR           = PROJECT_DIR + "/class"
 	TYPES_DIR            = CLIENT_DIR + "/types"
 	PROVIDER_DIR         = CLIENT_DIR + "/provider"
 	MIGRATION_TABLE_NAME = "_blaze_migrations"
