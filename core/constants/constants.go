@@ -9,6 +9,8 @@ const (
 	PROVIDER_DIR         = CLIENT_DIR + "/provider"
 	MIGRATION_TABLE_NAME = "_blaze_migrations"
 	QUERY_FILE_NAME      = "query.sql"
+	DB_MAX_CONNS_ENV     = "DB_MAX_CONNS"
+	DB_MIN_CONNS_ENV     = "DB_MIN_CONNS"
 )
 
 const (
