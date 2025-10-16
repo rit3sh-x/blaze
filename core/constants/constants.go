@@ -4,13 +4,15 @@ const (
 	PROJECT_DIR          = "blaze"
 	SCHEMA_FILE          = PROJECT_DIR + "/blaze.schema"
 	MIGRATION_DIR        = PROJECT_DIR + "/migrations"
-	CLIENT_DIR           = PROJECT_DIR + "/class"
-	TYPES_DIR            = CLIENT_DIR + "/types"
-	PROVIDER_DIR         = CLIENT_DIR + "/provider"
+	CLIENT_DIR           = PROJECT_DIR + "/generated"
+	TYPES_FILE           = CLIENT_DIR + "/types.go"
+	HOOKS_FILE           = CLIENT_DIR + "/hooks.go"
+	CLIENT_FILE          = CLIENT_DIR + "/client.go"
 	MIGRATION_TABLE_NAME = "_blaze_migrations"
 	QUERY_FILE_NAME      = "query.sql"
 	DB_MAX_CONNS_ENV     = "DB_MAX_CONNS"
 	DB_MIN_CONNS_ENV     = "DB_MIN_CONNS"
+	DATABASE_URI_ENV     = "DATABASE_URI"
 )
 
 const (

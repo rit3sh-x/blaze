@@ -20,8 +20,6 @@ func Init() error {
 		constants.PROJECT_DIR,
 		constants.MIGRATION_DIR,
 		constants.CLIENT_DIR,
-		constants.TYPES_DIR,
-		constants.PROVIDER_DIR,
 	}
 
 	for _, dir := range dirs {
@@ -35,6 +33,9 @@ func Init() error {
 		content []byte
 	}{
 		{constants.SCHEMA_FILE, []byte("")},
+		{constants.TYPES_FILE, []byte("package client\n")},
+		{constants.HOOKS_FILE, []byte("package client\n")},
+		{constants.CLIENT_FILE, []byte("package client\n")},
 	}
 
 	for _, file := range files {
@@ -72,6 +73,28 @@ func Init() error {
 			}
 		}
 	}
+
+	envPath := ".env"
+	envContent := []byte(constants.EnvContent)
+
+	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+		if err := os.WriteFile(envPath, envContent, 0644); err != nil {
+			return fmt.Errorf(constants.RED+"failed to create .env file: %w"+constants.RESET, err)
+		}
+		fmt.Println(constants.GREEN + ".env file created successfully" + constants.RESET)
+		return nil
+	}
+
+	file, err := os.OpenFile(envPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf(constants.RED+"failed to open .env file: %w"+constants.RESET, err)
+	}
+	defer file.Close()
+
+	if _, err := file.WriteString("\n" + string(envContent)); err != nil {
+		return fmt.Errorf(constants.RED+"failed to append to .env file: %w"+constants.RESET, err)
+	}
+	fmt.Println(constants.GREEN + "Environment variables added to .env file" + constants.RESET)
 
 	fmt.Printf(constants.GREEN+"✔ Blaze project initialized at ./%s"+constants.RESET+"\n", constants.PROJECT_DIR)
 	return nil

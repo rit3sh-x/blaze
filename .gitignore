@@ -1,3 +1,6 @@
 __test__/
 .env*.local
 /blaze
+
+# Blaze project
+/blaze/generated

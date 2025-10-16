@@ -30,8 +30,7 @@ func dropFiles() error {
 
 	dirs := []string{
 		constants.MIGRATION_DIR,
-		constants.TYPES_DIR,
-		constants.PROVIDER_DIR,
+		constants.CLIENT_DIR,
 	}
 
 	for _, dir := range dirs {
