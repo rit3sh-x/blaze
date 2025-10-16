@@ -46,42 +46,42 @@ func (ab *ASTBuilder) BuildAST(enumContent string, classContent string) (*Schema
 }
 
 func (ab *ASTBuilder) parseEnums(enumContent string, ast *SchemaAST) error {
-	if strings.TrimSpace(enumContent) == "" {
-		return nil
-	}
+    if strings.TrimSpace(enumContent) == "" {
+        return nil
+    }
 
-	enumPattern := regexp.MustCompile(`(?s)` + constants.KEYWORD_ENUM + `\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\{[^{}]*\}`)
-	enumDefs := enumPattern.FindAllString(enumContent, -1)
+    enumPattern := regexp.MustCompile(`(?s)` + constants.KEYWORD_ENUM + `\s+[A-Z][a-zA-Z0-9_]{0,63}\s*\{[^{}]*\}`)
+    enumDefs := enumPattern.FindAllString(enumContent, -1)
 
-	for i, enumDef := range enumDefs {
-		parsedEnum, err := ab.enumValidator.ParseEnum(enumDef, i)
-		if err != nil {
-			return fmt.Errorf("failed to parse enum at position %d: %v", i, err)
-		}
+    for i, enumDef := range enumDefs {
+        parsedEnum, err := ab.enumValidator.ParseEnum(enumDef, i)
+        if err != nil {
+            return fmt.Errorf("failed to parse enum at position %d: %v", i, err)
+        }
 
-		ast.Enums[parsedEnum.Name] = parsedEnum
-	}
+        ast.Enums[parsedEnum.Name] = parsedEnum
+    }
 
-	return nil
+    return nil
 }
 
 func (ab *ASTBuilder) parseClasses(classContent string, ast *SchemaAST) error {
-	if strings.TrimSpace(classContent) == "" {
-		return nil
-	}
+    if strings.TrimSpace(classContent) == "" {
+        return nil
+    }
 
-	classPattern := regexp.MustCompile(`(?s)` + constants.KEYWORD_CLASS + `\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\{[^{}]*\}`)
-	classDefs := classPattern.FindAllString(classContent, -1)
+    classPattern := regexp.MustCompile(`(?s)` + constants.KEYWORD_CLASS + `\s+[A-Z][a-zA-Z0-9_]{0,63}\s*\{[^{}]*\}`)
+    classDefs := classPattern.FindAllString(classContent, -1)
 
-	for i, classDef := range classDefs {
-		parsedClass, err := ab.classValidator.ParseClass(classDef, i)
-		if err != nil {
-			return fmt.Errorf("failed to parse class at position %d: %v", i, err)
-		}
-		ast.Classes = append(ast.Classes, parsedClass)
-	}
+    for i, classDef := range classDefs {
+        parsedClass, err := ab.classValidator.ParseClass(classDef, i)
+        if err != nil {
+            return fmt.Errorf("failed to parse class at position %d: %v", i, err)
+        }
+        ast.Classes = append(ast.Classes, parsedClass)
+    }
 
-	return nil
+    return nil
 }
 
 func (ast *SchemaAST) String() string {

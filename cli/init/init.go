@@ -33,9 +33,9 @@ func Init() error {
 		content []byte
 	}{
 		{constants.SCHEMA_FILE, []byte("")},
-		{constants.TYPES_FILE, []byte("package client\n")},
-		{constants.HOOKS_FILE, []byte("package client\n")},
-		{constants.CLIENT_FILE, []byte("package client\n")},
+		{constants.TYPES_FILE, []byte("package client\n\n")},
+		{constants.HOOKS_FILE, []byte("package client\n\n")},
+		{constants.CLIENT_FILE, []byte("package client\n\n")},
 	}
 
 	for _, file := range files {

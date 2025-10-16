@@ -58,16 +58,16 @@ func ReadAndSeparateSchema(filePath string) (string, string, error) {
 }
 
 func separateEnumsAndClassesWithRegex(content string) (string, string) {
-	enumPattern := regexp.MustCompile(`(?s)` + constants.KEYWORD_ENUM + `\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}`)
-	classPattern := regexp.MustCompile(`(?s)` + constants.KEYWORD_CLASS + `\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}`)
+    enumPattern := regexp.MustCompile(`(?s)` + constants.KEYWORD_ENUM + `\s+[A-Z][a-zA-Z0-9_]{0,63}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}`)
+    classPattern := regexp.MustCompile(`(?s)` + constants.KEYWORD_CLASS + `\s+[A-Z][a-zA-Z0-9_]{0,63}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}`)
 
-	enumMatches := enumPattern.FindAllString(content, -1)
-	classMatches := classPattern.FindAllString(content, -1)
+    enumMatches := enumPattern.FindAllString(content, -1)
+    classMatches := classPattern.FindAllString(content, -1)
 
-	enumContent := strings.Join(enumMatches, "\n\n")
-	classContent := strings.Join(classMatches, "\n\n")
+    enumContent := strings.Join(enumMatches, "\n\n")
+    classContent := strings.Join(classMatches, "\n\n")
 
-	return enumContent, classContent
+    return enumContent, classContent
 }
 
 func collapseSpaces(s string) string {

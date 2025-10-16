@@ -40,7 +40,7 @@ func NewEnumValidator() *EnumValidator {
 		reserved[strings.ToLower(string(scalarType))] = true
 	}
 
-	identifierPattern := regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+	identifierPattern := regexp.MustCompile(`^[A-Z][a-zA-Z0-9_]{0,63}$`)
 
 	return &EnumValidator{
 		enumRegex:         regexp.MustCompile(`^` + constants.KEYWORD_ENUM + `\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{([^}]*)\}\s*$`),
@@ -51,55 +51,43 @@ func NewEnumValidator() *EnumValidator {
 }
 
 func (v *EnumValidator) ValidateEnumName(name string) error {
-	if name == "" {
-		return fmt.Errorf("enum name cannot be empty")
-	}
+    if name == "" {
+        return fmt.Errorf("enum name cannot be empty")
+    }
 
-	if !v.identifierPattern.MatchString(name) {
-		return fmt.Errorf("invalid enum name '%s': must start with letter or underscore, followed by letters, digits, or underscores", name)
-	}
+    if !v.identifierPattern.MatchString(name) {
+        return fmt.Errorf("invalid enum name '%s': must start with uppercase letter, contain only alphanumeric characters/underscores, and be at most 64 characters", name)
+    }
 
-	if v.reservedKeywords[strings.ToLower(name)] {
-		return fmt.Errorf("enum name '%s' is a reserved keyword", name)
-	}
+    if v.reservedKeywords[strings.ToLower(name)] {
+        return fmt.Errorf("enum name '%s' is a reserved keyword", name)
+    }
 
-	if constants.IsScalarType(name) {
-		return fmt.Errorf("enum name '%s' conflicts with scalar type", name)
-	}
+    if constants.IsScalarType(name) {
+        return fmt.Errorf("enum name '%s' conflicts with scalar type", name)
+    }
 
-	if len(name) > 64 {
-		return fmt.Errorf("enum name '%s' is too long (max 64 characters)", name)
-	}
-
-	return nil
+    return nil
 }
 
 func (v *EnumValidator) ValidateEnumValue(value string, enumName string) error {
-	if value == "" {
-		return fmt.Errorf("enum value cannot be empty in enum '%s'", enumName)
-	}
+    if value == "" {
+        return fmt.Errorf("enum value cannot be empty")
+    }
 
-	if !v.identifierPattern.MatchString(value) {
-		return fmt.Errorf("invalid enum value '%s' in enum '%s': must start with letter or underscore, followed by letters, digits, or underscores", value, enumName)
-	}
+    if len(value) > 64 {
+        return fmt.Errorf("enum value '%s' is too long (max 64 characters)", value)
+    }
 
-	if v.reservedKeywords[strings.ToLower(value)] {
-		return fmt.Errorf("enum value '%s' in enum '%s' is a reserved keyword", value, enumName)
-	}
+    if !v.isValidEnumValueNaming(value) {
+        return fmt.Errorf("invalid enum value '%s': must be uppercase with underscores", value)
+    }
 
-	if constants.IsScalarType(value) {
-		return fmt.Errorf("enum value '%s' in enum '%s' conflicts with scalar type", value, enumName)
-	}
+    if v.reservedKeywords[strings.ToLower(value)] {
+        return fmt.Errorf("enum value '%s' in enum '%s' is a reserved keyword", value, enumName)
+    }
 
-	if !v.isValidEnumValueNaming(value) {
-		return fmt.Errorf("enum value '%s' in enum '%s' should be in UPPERCASE or PascalCase", value, enumName)
-	}
-
-	if len(value) > 64 {
-		return fmt.Errorf("enum value '%s' in enum '%s' is too long (max 64 characters)", value, enumName)
-	}
-
-	return nil
+    return nil
 }
 
 func (v *EnumValidator) isValidEnumValueNaming(value string) bool {

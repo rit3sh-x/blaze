@@ -20,12 +20,10 @@ type FieldValidator struct {
 }
 
 func NewFieldValidator(enums map[string]*enum.Enum) *FieldValidator {
-	fieldNamePattern := regexp.MustCompile(`^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+(.+)$`)
-
-	return &FieldValidator{
-		attributeValidator: attributes.NewAttributeValidator(enums),
-		fieldNamePattern:   fieldNamePattern,
-	}
+    return &FieldValidator{
+        attributeValidator: attributes.NewAttributeValidator(enums),
+        fieldNamePattern:   regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]{0,63}$`),
+    }
 }
 
 func (fv *FieldValidator) GetAttributeValidator() *attributes.AttributeValidator {
@@ -46,16 +44,33 @@ func (fv *FieldValidator) ParseFieldFromString(fieldName string, remainingStr st
 	return field, nil
 }
 
-func (fv *FieldValidator) ValidateField(field *Field) error {
-	if field == nil {
-		return fmt.Errorf("field cannot be nil")
-	}
+func (fv *FieldValidator) ValidateField(field *Field, cls string) error {
+    if field == nil {
+        return fmt.Errorf("field cannot be nil")
+    }
 
-	if field.AttributeDefinition == nil {
-		return fmt.Errorf("field attribute definition cannot be nil")
-	}
+    fieldName := field.GetName()
+    if fieldName == "" {
+        return fmt.Errorf("field name cannot be empty")
+    }
 
-	return nil
+    if len(fieldName) > 64 {
+        return fmt.Errorf("field name '%s' is too long (max 64 characters)", fieldName)
+    }
+
+    if !fv.fieldNamePattern.MatchString(fieldName) {
+        return fmt.Errorf("invalid field name '%s': must start with letter or underscore, contain only alphanumeric characters/underscores, and be at most 64 characters", fieldName)
+    }
+
+    if field.AttributeDefinition == nil {
+        return fmt.Errorf("field '%s' has no attribute definition", fieldName)
+    }
+
+    if err := fv.attributeValidator.ValidateFieldDefinition(field.AttributeDefinition, cls); err != nil {
+        return fmt.Errorf("field '%s' validation failed: %v", fieldName, err)
+    }
+
+    return nil
 }
 
 func (f *Field) GetName() string {

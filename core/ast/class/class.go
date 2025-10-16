@@ -28,7 +28,7 @@ func NewClassValidator(enums map[string]*enum.Enum) *ClassValidator {
 	return &ClassValidator{
 		attributeParser:  attributes.NewAttributeParser(enums),
 		enumValidator:    enum.NewEnumValidator(),
-		classNamePattern: regexp.MustCompile(`^[A-Z][a-zA-Z0-9_]*$`),
+		classNamePattern: regexp.MustCompile(`^[A-Z][a-zA-Z0-9_]{0,63}$`),
 		enumRegistry:     make(map[string]*enum.Enum),
 	}
 }
@@ -36,7 +36,7 @@ func NewClassValidator(enums map[string]*enum.Enum) *ClassValidator {
 func (cv *ClassValidator) ParseClass(definition string, position int) (*Class, error) {
 	definition = strings.TrimSpace(definition)
 
-	classPattern := regexp.MustCompile(`(?s)^` + constants.KEYWORD_CLASS + `\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\{([^{}]*)\}$`)
+	classPattern := regexp.MustCompile(`(?s)^` + constants.KEYWORD_CLASS + `\s+([A-Z][a-zA-Z0-9_]{0,63})\s*\{([^{}]*)\}$`)
 
 	matches := classPattern.FindStringSubmatch(definition)
 	if matches == nil {
@@ -136,9 +136,9 @@ func (cv *ClassValidator) ValidateClass(class *Class) error {
 func (cv *ClassValidator) validateClassName(name string) error {
 	name = strings.TrimSpace(name)
 
-	if !regexp.MustCompile(`^[A-Z][A-Za-z0-9_]{0,63}$`).MatchString(name) {
-		return fmt.Errorf("class name must start with uppercase letter, contain only alphanumeric characters/underscores, and be at most 64 chars")
-	}
+	if !regexp.MustCompile(`^[A-Z][a-zA-Z0-9_]{0,63}$`).MatchString(name) {
+        return fmt.Errorf("class name must start with capital letter, contain only alphanumeric characters/underscores, and be at most 64 chars")
+    }
 
 	return nil
 }

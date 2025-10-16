@@ -27,8 +27,8 @@ func NewAttributeParser(enums map[string]*enum.Enum) *AttributeParser {
 	return &AttributeParser{
 		fieldValidator:     field.NewFieldValidator(enums),
 		directiveValidator: directives.NewDirectiveValidator(),
-		classNamePattern:   regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`),
-		fieldPattern:       regexp.MustCompile(`^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+(.+)$`),
+		classNamePattern:   regexp.MustCompile(`^[A-Z][a-zA-Z0-9_]{0,63}$`),
+		fieldPattern:       regexp.MustCompile(`^\s*([a-zA-Z_][a-zA-Z0-9_]{0,63})\s+(.+)$`),
 	}
 }
 
@@ -69,7 +69,7 @@ func (ap *AttributeParser) ParseClassContent(classContent string, className stri
 		}
 	}
 
-	if err := ap.validateClassAttributes(attributes); err != nil {
+	if err := ap.validateClassAttributes(attributes, className); err != nil {
 		return nil, fmt.Errorf("validation failed: %v", err)
 	}
 
@@ -77,11 +77,24 @@ func (ap *AttributeParser) ParseClassContent(classContent string, className stri
 }
 
 func (ap *AttributeParser) parseField(line, className string, position int) (*field.Field, error) {
-	matches := ap.fieldPattern.FindStringSubmatch(line)
-	if len(matches) < 3 {
-		return nil, fmt.Errorf("invalid field syntax: %s", line)
-	}
-	return ap.fieldValidator.ParseFieldFromString(matches[1], matches[2], className, position)
+    matches := ap.fieldPattern.FindStringSubmatch(line)
+    if matches == nil {
+        return nil, fmt.Errorf("invalid field definition: must start with letter or underscore and be at most 64 characters")
+    }
+
+    fieldName := strings.TrimSpace(matches[1])
+    remainingStr := strings.TrimSpace(matches[2])
+
+    if len(fieldName) > 64 {
+        return nil, fmt.Errorf("field name '%s' exceeds 64 character limit", fieldName)
+    }
+
+    parsedField, err := ap.fieldValidator.ParseFieldFromString(fieldName, remainingStr, className, position)
+    if err != nil {
+        return nil, fmt.Errorf("failed to parse field '%s': %v", fieldName, err)
+    }
+
+    return parsedField, nil
 }
 
 func (ap *AttributeParser) parseClassDirectiveOrRelation(line string, attributes *ClassAttributes) error {
@@ -188,13 +201,13 @@ func (ap *AttributeParser) parseFieldArray(params string) ([]string, error) {
 	return fields, nil
 }
 
-func (ap *AttributeParser) validateClassAttributes(attributes *ClassAttributes) error {
+func (ap *AttributeParser) validateClassAttributes(attributes *ClassAttributes, cls string) error {
 	if err := ap.directiveValidator.ValidateMultipleClassDirectives(attributes.Directives); err != nil {
 		return fmt.Errorf("directive validation failed: %v", err)
 	}
 
 	for i, field := range attributes.Fields {
-		if err := ap.fieldValidator.ValidateField(field); err != nil {
+		if err := ap.fieldValidator.ValidateField(field, cls); err != nil {
 			return fmt.Errorf("field %d validation failed: %v", i+1, err)
 		}
 	}
