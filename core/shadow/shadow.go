@@ -3,56 +3,20 @@ package shadow
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
+	"github.com/rit3sh-x/blaze/core/ast"
+	"github.com/rit3sh-x/blaze/core/ast/class"
+	"github.com/rit3sh-x/blaze/core/ast/class/attributes"
+	"github.com/rit3sh-x/blaze/core/ast/class/directives"
+	"github.com/rit3sh-x/blaze/core/ast/enum"
+	"github.com/rit3sh-x/blaze/core/ast/field"
+	fieldattributes "github.com/rit3sh-x/blaze/core/ast/field/attributes"
+	"github.com/rit3sh-x/blaze/core/ast/field/defaults"
+	fielddirectives "github.com/rit3sh-x/blaze/core/ast/field/directives"
+	"github.com/rit3sh-x/blaze/core/ast/field/relations"
 	"github.com/rit3sh-x/blaze/core/constants"
 )
-
-type ShadowSchema struct {
-	enumsStr   string
-	classesStr string
-}
-
-type ParsedEnum struct {
-	Name   string
-	Values []string
-}
-
-type ParsedTable struct {
-	Name        string
-	Columns     []*ParsedColumn
-	PrimaryKeys []string
-	Uniques     [][]string
-	Checks      []string
-	ForeignKeys []*ParsedForeignKey
-}
-
-type ParsedColumn struct {
-	Name         string
-	Type         string
-	IsArray      bool
-	IsOptional   bool
-	DefaultValue string
-	IsUnique     bool
-	IsPrimaryKey bool
-}
-
-type ParsedForeignKey struct {
-	FromColumns []string
-	ToTable     string
-	ToColumns   []string
-	OnDelete    string
-	OnUpdate    string
-}
-
-type ParsedIndex struct {
-	Name    string
-	Table   string
-	Columns []string
-	Type    string
-	IsText  bool
-}
 
 type SQLParser struct {
 	createTableRegex     *regexp.Regexp
@@ -63,12 +27,18 @@ type SQLParser struct {
 	alterTableRegex      *regexp.Regexp
 	addColumnRegex       *regexp.Regexp
 	dropColumnRegex      *regexp.Regexp
-	columnDefRegex       *regexp.Regexp
-	constraintRegex      *regexp.Regexp
 	indexRegex           *regexp.Regexp
 	dropIndexRegex       *regexp.Regexp
 	foreignKeyRegex      *regexp.Regexp
 	checkConstraintRegex *regexp.Regexp
+}
+
+type ParsedIndex struct {
+	Name    string
+	Table   string
+	Columns []string
+	Type    string
+	IsText  bool
 }
 
 func NewSQLParser() *SQLParser {
@@ -81,8 +51,6 @@ func NewSQLParser() *SQLParser {
 		alterTableRegex:      regexp.MustCompile(`ALTER\s+TABLE\s+"([^"]+)"\s+(.*)`),
 		addColumnRegex:       regexp.MustCompile(`ADD\s+COLUMN\s+"([^"]+)"\s+([A-Z][A-Z0-9_\(\)]+(?:\[\])?)\s*(.*)`),
 		dropColumnRegex:      regexp.MustCompile(`DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?"([^"]+)"`),
-		columnDefRegex:       regexp.MustCompile(`"([^"]+)"\s+([A-Z][A-Z0-9_\(\)]+(?:\[\])?)\s*([^,]*?)(?:,|$)`),
-		constraintRegex:      regexp.MustCompile(`(?:CONSTRAINT\s+\w+\s+)?(PRIMARY\s+KEY|UNIQUE|CHECK|FOREIGN\s+KEY)\s*\([^)]+\)(?:\s+REFERENCES[^,]*)?`),
 		indexRegex:           regexp.MustCompile(`CREATE\s+INDEX\s+(\w+)\s+ON\s+"([^"]+)"\s*(?:USING\s+(\w+))?\s*\(\s*([^)]+)\s*\)`),
 		dropIndexRegex:       regexp.MustCompile(`DROP\s+INDEX\s+(?:IF\s+EXISTS\s+)?(\w+)`),
 		foreignKeyRegex:      regexp.MustCompile(`FOREIGN\s+KEY\s*\(\s*([^)]+)\s*\)\s+REFERENCES\s+"([^"]+)"\s*\(\s*([^)]+)\s*\)(?:\s+ON\s+DELETE\s+(\w+(?:\s+\w+)?))?(?:\s+ON\s+UPDATE\s+(\w+(?:\s+\w+)?))?`),
@@ -90,11 +58,26 @@ func NewSQLParser() *SQLParser {
 	}
 }
 
-func (p *SQLParser) ApplyMigrationToSchema(currentEnumsStr, currentClassesStr, migrationSQL string) (ShadowSchema, error) {
-	currentEnums := p.parseEnumsFromString(currentEnumsStr)
-	currentTables := p.parseClassesFromString(currentClassesStr)
-	currentIndexes := make(map[string]*ParsedIndex)
+func (p *SQLParser) ApplyMigrationToAST(currentAST *ast.SchemaAST, migrationSQL string) (*ast.SchemaAST, error) {
+	if currentAST == nil {
+		currentAST = &ast.SchemaAST{
+			Enums:   make(map[string]*enum.Enum),
+			Classes: []*class.Class{},
+		}
+	}
 
+	newAST := &ast.SchemaAST{
+		Enums:   make(map[string]*enum.Enum),
+		Classes: make([]*class.Class, len(currentAST.Classes)),
+	}
+
+	for k, v := range currentAST.Enums {
+		newAST.Enums[k] = p.copyEnum(v)
+	}
+
+	copy(newAST.Classes, currentAST.Classes)
+
+	indexes := make(map[string]*ParsedIndex)
 	statements := p.splitSQLStatements(migrationSQL)
 
 	for _, stmt := range statements {
@@ -103,253 +86,56 @@ func (p *SQLParser) ApplyMigrationToSchema(currentEnumsStr, currentClassesStr, m
 			continue
 		}
 
-		if err := p.applyStatement(stmt, currentEnums, currentTables, currentIndexes); err != nil {
+		if err := p.applyStatement(stmt, newAST, indexes); err != nil {
 			continue
 		}
 	}
 
-	enumsStr := p.buildEnumsString(currentEnums)
-	classesStr := p.buildClassesString(currentTables, currentIndexes)
+	p.applyIndexesToAST(newAST, indexes)
 
-	return ShadowSchema{
-		enumsStr:   enumsStr,
-		classesStr: classesStr,
-	}, nil
+	return newAST, nil
 }
 
-func (p *SQLParser) parseEnumsFromString(enumsStr string) map[string]*ParsedEnum {
-	enums := make(map[string]*ParsedEnum)
-
-	if enumsStr == "" {
-		return enums
-	}
-
-	enumBlocks := strings.Split(enumsStr, fmt.Sprintf(`\n\n%s `, constants.KEYWORD_ENUM))
-	if len(enumBlocks) > 0 && strings.HasPrefix(enumBlocks[0], fmt.Sprintf(`%s `, constants.KEYWORD_ENUM)) {
-		enumBlocks[0] = strings.TrimPrefix(enumBlocks[0], fmt.Sprintf(`%s `, constants.KEYWORD_ENUM))
-	}
-
-	for _, block := range enumBlocks {
-		if block == "" {
-			continue
-		}
-
-		if !strings.HasPrefix(block, fmt.Sprintf(`%s `, constants.KEYWORD_ENUM)) {
-			block = fmt.Sprintf(`%s `, constants.KEYWORD_ENUM) + block
-		}
-
-		enum := p.parseEnumFromBlock(block)
-		if enum != nil {
-			enums[enum.Name] = enum
-		}
-	}
-
-	return enums
-}
-
-func (p *SQLParser) parseClassesFromString(classesStr string) map[string]*ParsedTable {
-	tables := make(map[string]*ParsedTable)
-
-	if classesStr == "" {
-		return tables
-	}
-
-	classBlocks := strings.Split(classesStr, fmt.Sprintf(`\n\n%s `, constants.KEYWORD_CLASS))
-	if len(classBlocks) > 0 && strings.HasPrefix(classBlocks[0], fmt.Sprintf(`%s `, constants.KEYWORD_CLASS)) {
-		classBlocks[0] = strings.TrimPrefix(classBlocks[0], fmt.Sprintf(`%s `, constants.KEYWORD_CLASS))
-	}
-
-	for _, block := range classBlocks {
-		if block == "" {
-			continue
-		}
-
-		if !strings.HasPrefix(block, fmt.Sprintf(`%s `, constants.KEYWORD_CLASS)) {
-			block = fmt.Sprintf(`%s `, constants.KEYWORD_CLASS) + block
-		}
-
-		table := p.parseTableFromBlock(block)
-		if table != nil {
-			tables[table.Name] = table
-		}
-	}
-
-	return tables
-}
-
-func (p *SQLParser) parseEnumFromBlock(block string) *ParsedEnum {
-	lines := strings.Split(block, "\n")
-	if len(lines) == 0 {
+func (p *SQLParser) copyEnum(e *enum.Enum) *enum.Enum {
+	if e == nil {
 		return nil
 	}
 
-	headerPattern := regexp.MustCompile(fmt.Sprintf(`%s\s+(\w+)\s*\{`, constants.KEYWORD_ENUM))
-	matches := headerPattern.FindStringSubmatch(lines[0])
-	if matches == nil {
-		return nil
-	}
+	valuesCopy := make([]enum.EnumValue, len(e.Values))
+	copy(valuesCopy, e.Values)
 
-	enumName := matches[1]
-	var values []string
-
-	for i := 1; i < len(lines); i++ {
-		line := strings.TrimSpace(lines[i])
-		if line == "}" || line == "" {
-			continue
-		}
-		values = append(values, line)
-	}
-
-	return &ParsedEnum{
-		Name:   enumName,
-		Values: values,
+	return &enum.Enum{
+		Name:     e.Name,
+		Values:   valuesCopy,
+		Position: e.Position,
 	}
 }
 
-func (p *SQLParser) parseTableFromBlock(block string) *ParsedTable {
-	lines := strings.Split(block, "\n")
-	if len(lines) == 0 {
-		return nil
-	}
-
-	headerPattern := regexp.MustCompile(fmt.Sprintf(`%s\s+(\w+)\s*\{`, constants.KEYWORD_CLASS))
-	matches := headerPattern.FindStringSubmatch(lines[0])
-	if matches == nil {
-		return nil
-	}
-
-	tableName := matches[1]
-	table := &ParsedTable{
-		Name:        tableName,
-		Columns:     []*ParsedColumn{},
-		PrimaryKeys: []string{},
-		Uniques:     [][]string{},
-		Checks:      []string{},
-		ForeignKeys: []*ParsedForeignKey{},
-	}
-
-	for i := 1; i < len(lines); i++ {
-		line := strings.TrimSpace(lines[i])
-		if line == "}" || line == "" {
-			continue
-		}
-
-		if strings.HasPrefix(line, "@@") {
-			p.parseClassDirectiveFromLine(line, table)
-		} else {
-			column := p.parseFieldFromLine(line)
-			if column != nil {
-				table.Columns = append(table.Columns, column)
-			}
-		}
-	}
-
-	return table
-}
-
-func (p *SQLParser) parseFieldFromLine(line string) *ParsedColumn {
-	parts := strings.Fields(line)
-	if len(parts) < 2 {
-		return nil
-	}
-
-	fieldName := parts[0]
-	fieldType := parts[1]
-
-	isArray := strings.HasSuffix(fieldType, "[]")
-	if isArray {
-		fieldType = strings.TrimSuffix(fieldType, "[]")
-	}
-
-	isOptional := strings.HasSuffix(fieldType, "?")
-	if isOptional {
-		fieldType = strings.TrimSuffix(fieldType, "?")
-	}
-
-	column := &ParsedColumn{
-		Name:       fieldName,
-		Type:       fieldType,
-		IsArray:    isArray,
-		IsOptional: isOptional,
-	}
-
-	for i := 2; i < len(parts); i++ {
-		directive := parts[i]
-		if strings.HasPrefix(directive, "@") {
-			p.parseFieldDirective(directive, column)
-		}
-	}
-
-	return column
-}
-
-func (p *SQLParser) parseFieldDirective(directive string, column *ParsedColumn) {
-	switch {
-	case directive == fmt.Sprintf("@%s", constants.FIELD_ATTR_PRIMARY_KEY):
-		column.IsPrimaryKey = true
-	case directive == fmt.Sprintf("@%s", constants.FIELD_ATTR_UNIQUE):
-		column.IsUnique = true
-	case strings.HasPrefix(directive, fmt.Sprintf("@%s(", constants.FIELD_ATTR_DEFAULT)):
-		defaultVal := strings.TrimPrefix(directive, fmt.Sprintf("@%s(", constants.FIELD_ATTR_DEFAULT))
-		defaultVal = strings.TrimSuffix(defaultVal, ")")
-		column.DefaultValue = defaultVal
-	}
-}
-
-func (p *SQLParser) parseClassDirectiveFromLine(line string, table *ParsedTable) {
-	line = strings.TrimSpace(line)
-
-	if strings.HasPrefix(line, fmt.Sprintf("@@%s(", constants.CLASS_ATTR_PRIMARY_KEY)) {
-		columnList := strings.TrimPrefix(line, fmt.Sprintf("@@%s(", constants.CLASS_ATTR_PRIMARY_KEY))
-		columnList = strings.TrimSuffix(columnList, ")")
-		columnList = strings.Trim(columnList, "[]")
-		columns := strings.Split(columnList, ",")
-		for i, col := range columns {
-			columns[i] = strings.TrimSpace(col)
-		}
-		table.PrimaryKeys = columns
-	} else if strings.HasPrefix(line, fmt.Sprintf("@@%s(", constants.CLASS_ATTR_UNIQUE)) {
-		columnList := strings.TrimPrefix(line, fmt.Sprintf("@@%s(", constants.CLASS_ATTR_UNIQUE))
-		columnList = strings.TrimSuffix(columnList, ")")
-		columnList = strings.Trim(columnList, "[]")
-		columns := strings.Split(columnList, ",")
-		for i, col := range columns {
-			columns[i] = strings.TrimSpace(col)
-		}
-		table.Uniques = append(table.Uniques, columns)
-	} else if strings.HasPrefix(line, "@@check(") {
-		checkExpr := strings.TrimPrefix(line, "@@check(")
-		checkExpr = strings.TrimSuffix(checkExpr, ")")
-		checkExpr = strings.Trim(checkExpr, `"`)
-		table.Checks = append(table.Checks, checkExpr)
-	}
-}
-
-func (p *SQLParser) applyStatement(stmt string, enums map[string]*ParsedEnum, tables map[string]*ParsedTable, indexes map[string]*ParsedIndex) error {
+func (p *SQLParser) applyStatement(stmt string, ast *ast.SchemaAST, indexes map[string]*ParsedIndex) error {
 	stmt = strings.TrimSpace(stmt)
 
 	if matches := p.createEnumRegex.FindStringSubmatch(stmt); matches != nil {
-		return p.applyCreateEnum(matches, enums)
+		return p.applyCreateEnum(matches, ast)
 	}
 
 	if matches := p.alterEnumRegex.FindStringSubmatch(stmt); matches != nil {
-		return p.applyAlterEnum(matches, enums)
+		return p.applyAlterEnum(matches, ast)
 	}
 
 	if matches := p.dropEnumRegex.FindStringSubmatch(stmt); matches != nil {
-		return p.applyDropEnum(matches, enums)
+		return p.applyDropEnum(matches, ast)
 	}
 
 	if matches := p.createTableRegex.FindStringSubmatch(stmt); matches != nil {
-		return p.applyCreateTable(matches, tables)
+		return p.applyCreateTable(matches, ast)
 	}
 
 	if matches := p.dropTableRegex.FindStringSubmatch(stmt); matches != nil {
-		return p.applyDropTable(matches, tables)
+		return p.applyDropTable(matches, ast)
 	}
 
 	if matches := p.alterTableRegex.FindStringSubmatch(stmt); matches != nil {
-		return p.applyAlterTable(matches, tables)
+		return p.applyAlterTable(matches, ast)
 	}
 
 	if matches := p.indexRegex.FindStringSubmatch(stmt); matches != nil {
@@ -363,62 +149,84 @@ func (p *SQLParser) applyStatement(stmt string, enums map[string]*ParsedEnum, ta
 	return nil
 }
 
-func (p *SQLParser) applyCreateEnum(matches []string, enums map[string]*ParsedEnum) error {
+func (p *SQLParser) applyCreateEnum(matches []string, ast *ast.SchemaAST) error {
 	enumName := matches[1]
 	valuesStr := matches[2]
+
+	if _, exists := ast.Enums[enumName]; exists {
+		return nil
+	}
 
 	valuePattern := regexp.MustCompile(`'([^']*)'`)
 	valueMatches := valuePattern.FindAllStringSubmatch(valuesStr, -1)
 
-	var values []string
-	for _, match := range valueMatches {
-		values = append(values, match[1])
+	var values []enum.EnumValue
+	for i, match := range valueMatches {
+		values = append(values, enum.EnumValue{
+			Name:     match[1],
+			Position: i,
+		})
 	}
 
-	enums[enumName] = &ParsedEnum{
-		Name:   enumName,
-		Values: values,
+	ast.Enums[enumName] = &enum.Enum{
+		Name:     enumName,
+		Values:   values,
+		Position: len(ast.Enums),
 	}
 
 	return nil
 }
 
-func (p *SQLParser) applyAlterEnum(matches []string, enums map[string]*ParsedEnum) error {
+func (p *SQLParser) applyAlterEnum(matches []string, ast *ast.SchemaAST) error {
 	enumName := matches[1]
 	newValue := matches[2]
 
-	if enum, exists := enums[enumName]; exists {
-		for _, existingValue := range enum.Values {
-			if existingValue == newValue {
+	if enumDef, exists := ast.Enums[enumName]; exists {
+		for _, existingValue := range enumDef.Values {
+			if existingValue.Name == newValue {
 				return nil
 			}
 		}
-		enum.Values = append(enum.Values, newValue)
+
+		newValues := make([]enum.EnumValue, len(enumDef.Values)+1)
+		copy(newValues, enumDef.Values)
+		newValues[len(enumDef.Values)] = enum.EnumValue{
+			Name:     newValue,
+			Position: len(enumDef.Values),
+		}
+
+		enumDef.Values = newValues
 	}
 
 	return nil
 }
 
-func (p *SQLParser) applyDropEnum(matches []string, enums map[string]*ParsedEnum) error {
+func (p *SQLParser) applyDropEnum(matches []string, ast *ast.SchemaAST) error {
 	enumName := matches[1]
-	delete(enums, enumName)
+	delete(ast.Enums, enumName)
 	return nil
 }
 
-func (p *SQLParser) applyCreateTable(matches []string, tables map[string]*ParsedTable) error {
+func (p *SQLParser) applyCreateTable(matches []string, ast *ast.SchemaAST) error {
 	tableName := matches[1]
-	tableContent := matches[2]
 
-	table := &ParsedTable{
-		Name:        tableName,
-		Columns:     []*ParsedColumn{},
-		PrimaryKeys: []string{},
-		Uniques:     [][]string{},
-		Checks:      []string{},
-		ForeignKeys: []*ParsedForeignKey{},
+	for _, existingClass := range ast.Classes {
+		if existingClass.Name == tableName {
+			return nil
+		}
 	}
 
+	tableContent := matches[2]
 	parts := p.splitTableParts(tableContent)
+
+	var fields []*field.Field
+	var classDirectives []*directives.ClassDirective
+	var foreignKeys []ForeignKeyInfo
+	var primaryKeys []string
+	var uniques [][]string
+	var checks []string
+
+	fieldPosition := 0
 
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
@@ -427,64 +235,348 @@ func (p *SQLParser) applyCreateTable(matches []string, tables map[string]*Parsed
 		}
 
 		if p.isConstraint(part) {
-			p.parseConstraint(part, table)
+			p.parseConstraintForAST(part, &primaryKeys, &uniques, &checks, &foreignKeys)
 		} else {
-			p.parseColumn(part, table)
+			parsedField, err := p.parseColumnForAST(part, ast.Enums, fieldPosition)
+			if err != nil {
+				continue
+			}
+			fields = append(fields, parsedField)
+			fieldPosition++
 		}
 	}
 
-	tables[tableName] = table
+	if len(primaryKeys) == 1 {
+		for _, f := range fields {
+			if f.GetName() == primaryKeys[0] {
+				f.AttributeDefinition.Directives = append(f.AttributeDefinition.Directives, &fielddirectives.FieldDirective{
+					Name: constants.FIELD_ATTR_PRIMARY_KEY,
+				})
+				break
+			}
+		}
+	} else if len(primaryKeys) > 1 {
+		pkDirective := &directives.ClassDirective{
+			Name:  constants.CLASS_ATTR_PRIMARY_KEY,
+			Value: primaryKeys,
+		}
+		classDirectives = append(classDirectives, pkDirective)
+	}
+
+	for _, unique := range uniques {
+		uniqueDirective := &directives.ClassDirective{
+			Name:  constants.CLASS_ATTR_UNIQUE,
+			Value: unique,
+		}
+		classDirectives = append(classDirectives, uniqueDirective)
+	}
+
+	for _, check := range checks {
+		checkDirective := &directives.ClassDirective{
+			Name:  constants.CLASS_ATTR_CHECK,
+			Value: check,
+		}
+		classDirectives = append(classDirectives, checkDirective)
+	}
+
+	p.applyForeignKeysToFields(fields, foreignKeys)
+
+	classAttrs := &attributes.ClassAttributes{
+		Fields:     fields,
+		Directives: classDirectives,
+	}
+
+	newClass := &class.Class{
+		Name:       tableName,
+		Attributes: classAttrs,
+		Position:   len(ast.Classes),
+	}
+
+	ast.Classes = append(ast.Classes, newClass)
 	return nil
 }
 
-func (p *SQLParser) applyDropTable(matches []string, tables map[string]*ParsedTable) error {
+type ForeignKeyInfo struct {
+	FromColumns []string
+	ToTable     string
+	ToColumns   []string
+	OnDelete    string
+	OnUpdate    string
+}
+
+func (p *SQLParser) parseConstraintForAST(part string, primaryKeys *[]string, uniques *[][]string, checks *[]string, foreignKeys *[]ForeignKeyInfo) {
+	upperPart := strings.ToUpper(part)
+
+	if strings.Contains(upperPart, "PRIMARY KEY") {
+		pkPattern := regexp.MustCompile(`PRIMARY\s+KEY\s*\(\s*([^)]+)\s*\)`)
+		if matches := pkPattern.FindStringSubmatch(part); matches != nil {
+			*primaryKeys = p.parseColumnList(matches[1])
+		}
+	} else if strings.Contains(upperPart, "UNIQUE") && !strings.Contains(upperPart, "FOREIGN") {
+		uniquePattern := regexp.MustCompile(`UNIQUE\s*\(\s*([^)]+)\s*\)`)
+		if matches := uniquePattern.FindStringSubmatch(part); matches != nil {
+			*uniques = append(*uniques, p.parseColumnList(matches[1]))
+		}
+	} else if strings.Contains(upperPart, "CHECK") {
+		if matches := p.checkConstraintRegex.FindStringSubmatch(part); matches != nil {
+			*checks = append(*checks, matches[1])
+		}
+	} else if strings.Contains(upperPart, "FOREIGN KEY") {
+		if matches := p.foreignKeyRegex.FindStringSubmatch(part); matches != nil {
+			fk := ForeignKeyInfo{
+				FromColumns: p.parseColumnList(matches[1]),
+				ToTable:     matches[2],
+				ToColumns:   p.parseColumnList(matches[3]),
+				OnDelete:    p.mapSQLActionToConstant(matches[4]),
+				OnUpdate:    p.mapSQLActionToConstant(matches[5]),
+			}
+			*foreignKeys = append(*foreignKeys, fk)
+		}
+	}
+}
+
+func (p *SQLParser) parseColumnForAST(part string, enums map[string]*enum.Enum, position int) (*field.Field, error) {
+	columnPattern := regexp.MustCompile(`^"([^"]+)"\s+([A-Z][A-Z0-9_\(\)]+(?:\[\])?)\s*(.*)$`)
+	matches := columnPattern.FindStringSubmatch(part)
+
+	if matches == nil {
+		return nil, fmt.Errorf("invalid column definition")
+	}
+
+	columnName := matches[1]
+	columnType := matches[2]
+	constraints := strings.TrimSpace(matches[3])
+
+	isArray := strings.HasSuffix(columnType, "[]")
+	if isArray {
+		columnType = strings.TrimSuffix(columnType, "[]")
+	}
+
+	schemaType := p.mapSQLTypeToSchemaType(columnType)
+	isOptional := !strings.Contains(strings.ToUpper(constraints), "NOT NULL")
+
+	var fieldAttrs []*fieldattributes.Attribute
+	var fieldDirectivesList []*fielddirectives.FieldDirective
+
+	if strings.Contains(strings.ToUpper(constraints), "UNIQUE") {
+		fieldDirectivesList = append(fieldDirectivesList, &fielddirectives.FieldDirective{
+			Name: constants.FIELD_ATTR_UNIQUE,
+		})
+	}
+
+	defaultPattern := regexp.MustCompile(`DEFAULT\s+([^,\s]+(?:\s+[^,\s]+)*)`)
+	if defaultMatches := defaultPattern.FindStringSubmatch(constraints); defaultMatches != nil {
+		defaultVal := strings.TrimSpace(defaultMatches[1])
+		schemaDefault := p.mapDefaultValueToSchema(defaultVal)
+
+		if schemaDefault != "" {
+			validator := defaults.NewDefaultValidator(enums)
+			defaultValue, err := validator.ValidateDefault(schemaDefault, schemaType, isArray)
+			if err == nil {
+				fieldAttrs = append(fieldAttrs, &fieldattributes.Attribute{
+					Name:  constants.FIELD_ATTR_DEFAULT,
+					Value: defaultValue,
+				})
+			}
+		}
+	}
+
+	if strings.Contains(strings.ToUpper(constraints), "GENERATED BY DEFAULT AS IDENTITY") {
+		validator := defaults.NewDefaultValidator(enums)
+		defaultValue, err := validator.ValidateDefault(constants.DEFAULT_AUTOINCREMENT_CALLBACK, schemaType, false)
+		if err == nil {
+			fieldAttrs = append(fieldAttrs, &fieldattributes.Attribute{
+				Name:  constants.FIELD_ATTR_DEFAULT,
+				Value: defaultValue,
+			})
+		}
+	}
+
+	kind := p.determineFieldKind(schemaType, enums)
+
+	attrDef := &fieldattributes.AttributeDefinition{
+		Name:       columnName,
+		DataType:   schemaType,
+		Kind:       kind,
+		IsArray:    isArray,
+		IsOptional: isOptional,
+		Attributes: fieldAttrs,
+		Directives: fieldDirectivesList,
+	}
+
+	return &field.Field{
+		AttributeDefinition: attrDef,
+		Position:            position,
+	}, nil
+}
+
+func (p *SQLParser) applyForeignKeysToFields(fields []*field.Field, foreignKeys []ForeignKeyInfo) {
+	for _, fk := range foreignKeys {
+		if len(fk.FromColumns) == 0 || len(fk.ToColumns) == 0 {
+			continue
+		}
+
+		if len(fk.FromColumns) == 1 {
+			for _, f := range fields {
+				if f.GetName() == fk.FromColumns[0] {
+					relationValidator := relations.NewRelationValidator()
+					relation := &relations.Relation{
+						From:      fk.FromColumns,
+						To:        fk.ToColumns,
+						ToClass:   fk.ToTable,
+						FromClass: "",
+						OnDelete:  fk.OnDelete,
+						OnUpdate:  fk.OnUpdate,
+					}
+
+					if err := relationValidator.ValidateRelation(relation); err == nil {
+						f.AttributeDefinition.Attributes = append(f.AttributeDefinition.Attributes, &fieldattributes.Attribute{
+							Name:  constants.FIELD_ATTR_RELATION,
+							Value: relation,
+						})
+
+						f.AttributeDefinition.DataType = fk.ToTable
+						f.AttributeDefinition.Kind = constants.FIELD_KIND_OBJECT
+					}
+					break
+				}
+			}
+		}
+	}
+}
+
+func (p *SQLParser) applyIndexesToAST(ast *ast.SchemaAST, indexes map[string]*ParsedIndex) {
+	for _, index := range indexes {
+		for _, cls := range ast.Classes {
+			if cls.Name == index.Table {
+				directiveName := constants.CLASS_ATTR_INDEX
+				if index.IsText {
+					directiveName = constants.CLASS_ATTR_TEXT_INDEX
+				}
+
+				if !p.isSystemGeneratedIndexForAST(index, cls) {
+					indexDirective := &directives.ClassDirective{
+						Name:  directiveName,
+						Value: index.Columns,
+					}
+					cls.Attributes.Directives = append(cls.Attributes.Directives, indexDirective)
+				}
+				break
+			}
+		}
+	}
+}
+
+func (p *SQLParser) isSystemGeneratedIndexForAST(index *ParsedIndex, cls *class.Class) bool {
+	pkFields := cls.GetPrimaryKeyFields()
+	if len(index.Columns) == len(pkFields) && len(pkFields) > 0 {
+		pkSet := make(map[string]bool)
+		for _, pk := range pkFields {
+			pkSet[pk] = true
+		}
+
+		allPK := true
+		for _, col := range index.Columns {
+			if !pkSet[col] {
+				allPK = false
+				break
+			}
+		}
+		if allPK {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (p *SQLParser) applyDropTable(matches []string, ast *ast.SchemaAST) error {
 	tableName := matches[1]
-	delete(tables, tableName)
+
+	for i, cls := range ast.Classes {
+		if cls.Name == tableName {
+			ast.Classes = append(ast.Classes[:i], ast.Classes[i+1:]...)
+
+			for j := i; j < len(ast.Classes); j++ {
+				ast.Classes[j].Position = j
+			}
+			break
+		}
+	}
+
 	return nil
 }
 
-func (p *SQLParser) applyAlterTable(matches []string, tables map[string]*ParsedTable) error {
+func (p *SQLParser) applyAlterTable(matches []string, ast *ast.SchemaAST) error {
 	tableName := matches[1]
 	alterAction := matches[2]
 
-	table, exists := tables[tableName]
-	if !exists {
+	var targetClass *class.Class
+	for _, cls := range ast.Classes {
+		if cls.Name == tableName {
+			targetClass = cls
+			break
+		}
+	}
+
+	if targetClass == nil {
 		return fmt.Errorf("table %s does not exist", tableName)
 	}
 
 	if addMatches := p.addColumnRegex.FindStringSubmatch(alterAction); addMatches != nil {
 		columnName := addMatches[1]
+
+		for _, existingField := range targetClass.Attributes.Fields {
+			if existingField.GetName() == columnName {
+				return nil
+			}
+		}
+
 		columnType := addMatches[2]
 		constraints := strings.TrimSpace(addMatches[3])
 
-		column := &ParsedColumn{
-			Name:         columnName,
-			Type:         columnType,
-			IsArray:      strings.HasSuffix(columnType, "[]"),
-			IsOptional:   !strings.Contains(strings.ToUpper(constraints), "NOT NULL"),
-			IsUnique:     strings.Contains(strings.ToUpper(constraints), "UNIQUE"),
-			IsPrimaryKey: false,
+		isArray := strings.HasSuffix(columnType, "[]")
+		if isArray {
+			columnType = strings.TrimSuffix(columnType, "[]")
 		}
 
-		if column.IsArray {
-			column.Type = strings.TrimSuffix(column.Type, "[]")
+		schemaType := p.mapSQLTypeToSchemaType(columnType)
+		isOptional := !strings.Contains(strings.ToUpper(constraints), "NOT NULL")
+
+		kind := p.determineFieldKind(schemaType, ast.Enums)
+
+		attrDef := &fieldattributes.AttributeDefinition{
+			Name:       columnName,
+			DataType:   schemaType,
+			Kind:       kind,
+			IsArray:    isArray,
+			IsOptional: isOptional,
+			Attributes: []*fieldattributes.Attribute{},
+			Directives: []*fielddirectives.FieldDirective{},
 		}
 
-		defaultPattern := regexp.MustCompile(`DEFAULT\s+([^,\s]+(?:\s+[^,\s]+)*)`)
-		if defaultMatches := defaultPattern.FindStringSubmatch(constraints); defaultMatches != nil {
-			column.DefaultValue = strings.TrimSpace(defaultMatches[1])
+		newField := &field.Field{
+			AttributeDefinition: attrDef,
+			Position:            len(targetClass.Attributes.Fields),
 		}
 
-		table.Columns = append(table.Columns, column)
+		targetClass.Attributes.Fields = append(targetClass.Attributes.Fields, newField)
 		return nil
 	}
 
 	if dropMatches := p.dropColumnRegex.FindStringSubmatch(alterAction); dropMatches != nil {
 		columnName := dropMatches[1]
 
-		for i, col := range table.Columns {
-			if col.Name == columnName {
-				table.Columns = append(table.Columns[:i], table.Columns[i+1:]...)
+		for i, f := range targetClass.Attributes.Fields {
+			if f.GetName() == columnName {
+				targetClass.Attributes.Fields = append(
+					targetClass.Attributes.Fields[:i],
+					targetClass.Attributes.Fields[i+1:]...,
+				)
+
+				for j := i; j < len(targetClass.Attributes.Fields); j++ {
+					targetClass.Attributes.Fields[j].Position = j
+				}
 				break
 			}
 		}
@@ -530,6 +622,18 @@ func (p *SQLParser) applyDropIndex(matches []string, indexes map[string]*ParsedI
 	indexName := matches[1]
 	delete(indexes, indexName)
 	return nil
+}
+
+func (p *SQLParser) determineFieldKind(fieldType string, enums map[string]*enum.Enum) string {
+	if constants.IsScalarType(fieldType) {
+		return constants.FIELD_KIND_SCALAR
+	}
+
+	if _, exists := enums[fieldType]; exists {
+		return constants.FIELD_KIND_ENUM
+	}
+
+	return constants.FIELD_KIND_OBJECT
 }
 
 func (p *SQLParser) splitSQLStatements(sqlContent string) []string {
@@ -627,76 +731,6 @@ func (p *SQLParser) isConstraint(part string) bool {
 		strings.Contains(upperPart, "FOREIGN KEY")
 }
 
-func (p *SQLParser) parseConstraint(part string, table *ParsedTable) {
-	upperPart := strings.ToUpper(part)
-
-	if strings.Contains(upperPart, "PRIMARY KEY") {
-		pkPattern := regexp.MustCompile(`PRIMARY\s+KEY\s*\(\s*([^)]+)\s*\)`)
-		if matches := pkPattern.FindStringSubmatch(part); matches != nil {
-			columns := p.parseColumnList(matches[1])
-			table.PrimaryKeys = columns
-		}
-	} else if strings.Contains(upperPart, "UNIQUE") && !strings.Contains(upperPart, "FOREIGN") {
-		uniquePattern := regexp.MustCompile(`UNIQUE\s*\(\s*([^)]+)\s*\)`)
-		if matches := uniquePattern.FindStringSubmatch(part); matches != nil {
-			columns := p.parseColumnList(matches[1])
-			table.Uniques = append(table.Uniques, columns)
-		}
-	} else if strings.Contains(upperPart, "CHECK") {
-		if matches := p.checkConstraintRegex.FindStringSubmatch(part); matches != nil {
-			table.Checks = append(table.Checks, matches[1])
-		}
-	} else if strings.Contains(upperPart, "FOREIGN KEY") {
-		if matches := p.foreignKeyRegex.FindStringSubmatch(part); matches != nil {
-			fk := &ParsedForeignKey{
-				FromColumns: p.parseColumnList(matches[1]),
-				ToTable:     matches[2],
-				ToColumns:   p.parseColumnList(matches[3]),
-				OnDelete:    p.mapSQLActionToConstant(matches[4]),
-				OnUpdate:    p.mapSQLActionToConstant(matches[5]),
-			}
-			table.ForeignKeys = append(table.ForeignKeys, fk)
-		}
-	}
-}
-
-func (p *SQLParser) parseColumn(part string, table *ParsedTable) {
-	columnPattern := regexp.MustCompile(`^"([^"]+)"\s+([A-Z][A-Z0-9_\(\)]+(?:\[\])?)\s*(.*)$`)
-	matches := columnPattern.FindStringSubmatch(part)
-
-	if matches == nil {
-		return
-	}
-
-	columnName := matches[1]
-	columnType := matches[2]
-	constraints := strings.TrimSpace(matches[3])
-
-	column := &ParsedColumn{
-		Name:         columnName,
-		Type:         columnType,
-		IsArray:      strings.HasSuffix(columnType, "[]"),
-		IsOptional:   !strings.Contains(strings.ToUpper(constraints), "NOT NULL"),
-		IsUnique:     strings.Contains(strings.ToUpper(constraints), "UNIQUE"),
-		IsPrimaryKey: false,
-	}
-
-	if column.IsArray {
-		column.Type = strings.TrimSuffix(column.Type, "[]")
-	}
-
-	defaultPattern := regexp.MustCompile(`DEFAULT\s+([^,\s]+(?:\s+[^,\s]+)*)`)
-	if defaultMatches := defaultPattern.FindStringSubmatch(constraints); defaultMatches != nil {
-		column.DefaultValue = strings.TrimSpace(defaultMatches[1])
-	}
-
-	if strings.Contains(strings.ToUpper(constraints), "GENERATED BY DEFAULT AS IDENTITY") {
-		column.DefaultValue = "autoincrement()"
-	}
-
-	table.Columns = append(table.Columns, column)
-}
-
 func (p *SQLParser) parseColumnList(columnList string) []string {
 	var columns []string
 	parts := strings.Split(columnList, ",")
@@ -781,219 +815,4 @@ func (p *SQLParser) mapDefaultValueToSchema(defaultVal string) string {
 	default:
 		return defaultVal
 	}
-}
-
-func (p *SQLParser) buildEnumsString(enums map[string]*ParsedEnum) string {
-	if len(enums) == 0 {
-		return ""
-	}
-
-	var enumStrings []string
-
-	var enumNames []string
-	for name := range enums {
-		enumNames = append(enumNames, name)
-	}
-	sort.Strings(enumNames)
-
-	for _, name := range enumNames {
-		enum := enums[name]
-		var builder strings.Builder
-
-		builder.WriteString(fmt.Sprintf("%s %s {\n",constants.KEYWORD_ENUM, enum.Name))
-		for _, value := range enum.Values {
-			builder.WriteString(fmt.Sprintf("  %s\n", value))
-		}
-		builder.WriteString("}")
-
-		enumStrings = append(enumStrings, builder.String())
-	}
-
-	return strings.Join(enumStrings, "\n\n")
-}
-
-func (p *SQLParser) buildClassesString(tables map[string]*ParsedTable, indexes map[string]*ParsedIndex) string {
-	if len(tables) == 0 {
-		return ""
-	}
-
-	var classStrings []string
-
-	var tableNames []string
-	for name := range tables {
-		tableNames = append(tableNames, name)
-	}
-	sort.Strings(tableNames)
-
-	for _, tableName := range tableNames {
-		table := tables[tableName]
-		classStr := p.buildClassString(table, indexes)
-		if classStr != "" {
-			classStrings = append(classStrings, classStr)
-		}
-	}
-
-	return strings.Join(classStrings, "\n\n")
-}
-
-func (p *SQLParser) buildClassString(table *ParsedTable, indexes map[string]*ParsedIndex) string {
-	var builder strings.Builder
-
-	builder.WriteString(fmt.Sprintf("%s %s {\n",constants.KEYWORD_CLASS, table.Name))
-
-	pkSet := make(map[string]bool)
-	for _, pk := range table.PrimaryKeys {
-		pkSet[pk] = true
-	}
-
-	for _, column := range table.Columns {
-		fieldStr := p.buildFieldString(column, table, pkSet)
-		if fieldStr != "" {
-			builder.WriteString(fmt.Sprintf("  %s\n", fieldStr))
-		}
-	}
-
-	p.addClassDirectives(&builder, table, indexes)
-
-	builder.WriteString("}")
-
-	return builder.String()
-}
-
-func (p *SQLParser) buildFieldString(column *ParsedColumn, table *ParsedTable, pkSet map[string]bool) string {
-	var parts []string
-
-	fieldType := p.mapSQLTypeToSchemaType(column.Type)
-
-	if column.IsArray {
-		fieldType += "[]"
-	}
-
-	if column.IsOptional && !pkSet[column.Name] {
-		fieldType += "?"
-	}
-
-	parts = append(parts, column.Name, fieldType)
-
-	if pkSet[column.Name] && len(table.PrimaryKeys) == 1 {
-		parts = append(parts, fmt.Sprintf("@%s", constants.FIELD_ATTR_PRIMARY_KEY))
-	}
-
-	if column.IsUnique && !pkSet[column.Name] {
-		parts = append(parts, fmt.Sprintf("@%s", constants.FIELD_ATTR_UNIQUE))
-	}
-
-	if column.DefaultValue != "" {
-		defaultVal := p.mapDefaultValueToSchema(column.DefaultValue)
-		if defaultVal != "" {
-			parts = append(parts, fmt.Sprintf("@%s(%s)",constants.FIELD_ATTR_DEFAULT , defaultVal))
-		}
-	}
-
-	relationStr := p.buildRelationString(column, table)
-	if relationStr != "" {
-		parts = append(parts, relationStr)
-	}
-
-	return strings.Join(parts, " ")
-}
-
-func (p *SQLParser) buildRelationString(column *ParsedColumn, table *ParsedTable) string {
-	for _, fk := range table.ForeignKeys {
-		for i, fromCol := range fk.FromColumns {
-			if fromCol == column.Name && i < len(fk.ToColumns) {
-				var relationParts []string
-
-				fromFields := fmt.Sprintf("[%s]", strings.Join(fk.FromColumns, ", "))
-				toFields := fmt.Sprintf("[%s]", strings.Join(fk.ToColumns, ", "))
-				relationParts = append(relationParts, fromFields, toFields)
-
-				if fk.OnDelete != "" && fk.OnDelete != constants.ON_DELETE_NO_ACTION {
-					relationParts = append(relationParts, fmt.Sprintf("onDelete: %s", fk.OnDelete))
-				}
-
-				if fk.OnUpdate != "" && fk.OnUpdate != constants.ON_UPDATE_NO_ACTION {
-					relationParts = append(relationParts, fmt.Sprintf("onUpdate: %s", fk.OnUpdate))
-				}
-
-				return fmt.Sprintf("@%s(%s)", constants.FIELD_ATTR_RELATION, strings.Join(relationParts, ", "))
-			}
-		}
-	}
-
-	return ""
-}
-
-func (p *SQLParser) addClassDirectives(builder *strings.Builder, table *ParsedTable, indexes map[string]*ParsedIndex) {
-	if len(table.PrimaryKeys) > 1 {
-		pkFields := fmt.Sprintf("[%s]", strings.Join(table.PrimaryKeys, ", "))
-		builder.WriteString(fmt.Sprintf("\n  @@%s(%s)", constants.CLASS_ATTR_PRIMARY_KEY, pkFields))
-	}
-
-	for _, unique := range table.Uniques {
-		if len(unique) > 0 {
-			uniqueFields := fmt.Sprintf("[%s]", strings.Join(unique, ", "))
-			builder.WriteString(fmt.Sprintf("\n  @@%s(%s)", constants.CLASS_ATTR_UNIQUE, uniqueFields))
-		}
-	}
-
-	for _, index := range indexes {
-		if index.Table == table.Name {
-			if index.IsText {
-				indexFields := fmt.Sprintf("[%s]", strings.Join(index.Columns, ", "))
-				builder.WriteString(fmt.Sprintf("\n  @@%s(%s)", constants.CLASS_ATTR_TEXT_INDEX, indexFields))
-			} else {
-				if !p.isSystemGeneratedIndex(index, table) {
-					indexFields := fmt.Sprintf("[%s]", strings.Join(index.Columns, ", "))
-					builder.WriteString(fmt.Sprintf("\n  @@%s(%s)", constants.CLASS_ATTR_INDEX, indexFields))
-				}
-			}
-		}
-	}
-
-	for _, check := range table.Checks {
-		builder.WriteString(fmt.Sprintf("\n  @@%s(\"%s\")", constants.CLASS_ATTR_CHECK, check))
-	}
-}
-
-func (p *SQLParser) isSystemGeneratedIndex(index *ParsedIndex, table *ParsedTable) bool {
-	if len(index.Columns) == len(table.PrimaryKeys) {
-		pkSet := make(map[string]bool)
-		for _, pk := range table.PrimaryKeys {
-			pkSet[pk] = true
-		}
-
-		allPK := true
-		for _, col := range index.Columns {
-			if !pkSet[col] {
-				allPK = false
-				break
-			}
-		}
-		if allPK {
-			return true
-		}
-	}
-
-	expectedFKPattern := fmt.Sprintf("idx_%s_", strings.ToLower(table.Name))
-	if strings.HasPrefix(strings.ToLower(index.Name), expectedFKPattern) {
-		return true
-	}
-
-	for _, unique := range table.Uniques {
-		if len(unique) == len(index.Columns) {
-			match := true
-			for i, col := range index.Columns {
-				if i >= len(unique) || unique[i] != col {
-					match = false
-					break
-				}
-			}
-			if match {
-				return true
-			}
-		}
-	}
-
-	return false
 }

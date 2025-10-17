@@ -8,6 +8,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rit3sh-x/blaze/core/ast"
+	"github.com/rit3sh-x/blaze/core/ast/class"
+	"github.com/rit3sh-x/blaze/core/ast/enum"
 	"github.com/rit3sh-x/blaze/core/constants"
 )
 
@@ -30,34 +33,37 @@ func NewApplyEngine() *ApplyEngine {
 	}
 }
 
-func (ae *ApplyEngine) BuildProgressiveSchema() (string, string, error) {
+func (ae *ApplyEngine) BuildProgressiveAST() (*ast.SchemaAST, error) {
 	migrationFiles, err := ae.readMigrationFiles()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read migration files: %v", err)
+		return nil, fmt.Errorf("failed to read migration files: %v", err)
 	}
 
 	if len(migrationFiles) == 0 {
-		return "", "", nil
+		return &ast.SchemaAST{
+			Enums:   make(map[string]*enum.Enum),
+			Classes: []*class.Class{},
+		}, nil
 	}
 
 	sort.Slice(migrationFiles, func(i, j int) bool {
 		return migrationFiles[i].Timestamp < migrationFiles[j].Timestamp
 	})
 
-	currentEnumsStr := ""
-	currentClassesStr := ""
-
-	for _, migrationFile := range migrationFiles {
-		newSchema, err := ae.parser.ApplyMigrationToSchema(currentEnumsStr, currentClassesStr, migrationFile.SQL)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to apply migration %s: %v", migrationFile.Name, err)
-		}
-
-		currentEnumsStr = newSchema.enumsStr
-		currentClassesStr = newSchema.classesStr
+	currentAST := &ast.SchemaAST{
+		Enums:   make(map[string]*enum.Enum),
+		Classes: []*class.Class{},
 	}
 
-	return currentEnumsStr, currentClassesStr, nil
+	for _, migrationFile := range migrationFiles {
+		newAST, err := ae.parser.ApplyMigrationToAST(currentAST, migrationFile.SQL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply migration %s: %v", migrationFile.Name, err)
+		}
+		currentAST = newAST
+	}
+
+	return currentAST, nil
 }
 
 func (ae *ApplyEngine) readMigrationFiles() ([]*MigrationFile, error) {
@@ -122,7 +128,7 @@ func (ae *ApplyEngine) extractTimestamp(filename string) (int64, error) {
 	return timestamp, nil
 }
 
-func BuildSchemaFromMigrations() (string, string, error) {
+func BuildASTFromMigrations() (*ast.SchemaAST, error) {
 	engine := NewApplyEngine()
-	return engine.BuildProgressiveSchema()
+	return engine.BuildProgressiveAST()
 }

@@ -36,6 +36,7 @@ func Init() error {
 		{constants.TYPES_FILE, []byte("package client\n\n")},
 		{constants.HOOKS_FILE, []byte("package client\n\n")},
 		{constants.CLIENT_FILE, []byte("package client\n\n")},
+		{constants.UTIL_FILE, []byte("package client\n\n")},
 	}
 
 	for _, file := range files {
