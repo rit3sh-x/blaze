@@ -21,6 +21,7 @@ import (
 
 type BlazeDatabaseClient struct {
     *db.BlazeDB
+    ctx context.Context
 }
 
 func DB(ctx context.Context, envFile string) (*BlazeDatabaseClient, error) {
@@ -28,7 +29,24 @@ func DB(ctx context.Context, envFile string) (*BlazeDatabaseClient, error) {
     if err != nil {
         return nil, err
     }
-    return &BlazeDatabaseClient{BlazeDB: blazeDB}, nil
+    return &BlazeDatabaseClient{
+        BlazeDB: blazeDB,
+        ctx: ctx,
+    }, nil
+}
+
+func (c *BlazeDatabaseClient) WithContext(ctx context.Context) *BlazeDatabaseClient {
+    return &BlazeDatabaseClient{
+        BlazeDB: c.BlazeDB,
+        ctx: ctx,
+    }
+}
+
+func (c *BlazeDatabaseClient) Context() context.Context {
+    if c.ctx == nil {
+        return context.Background()
+    }
+    return c.ctx
 }
 
 func (c *BlazeDatabaseClient) Connect() bool {
@@ -37,7 +55,7 @@ func (c *BlazeDatabaseClient) Connect() bool {
     }
 
     var result int
-    err := c.Pool.QueryRow(c.Ctx, constants.TEST_QUERY).Scan(&result)
+    err := c.Pool.QueryRow(c.Context(), constants.TEST_QUERY).Scan(&result)
     return err == nil && result == 1
 }
 
@@ -55,7 +73,7 @@ func (c *BlazeDatabaseClient) ExecuteRaw(query string, args ...interface{}) (int
         return 0, fmt.Errorf("database connection is nil")
     }
 
-    result, err := c.Pool.Exec(c.Ctx, query, args...)
+    result, err := c.Pool.Exec(c.Context(), query, args...)
     if err != nil {
         return 0, err
     }
@@ -68,7 +86,7 @@ func (c *BlazeDatabaseClient) QueryRaw(query string, args ...interface{}) ([]map
         return nil, fmt.Errorf("database connection is nil")
     }
 
-    rows, err := c.Pool.Query(c.Ctx, query, args...)
+    rows, err := c.Pool.Query(c.Context(), query, args...)
     if err != nil {
         return nil, err
     }
@@ -108,24 +126,24 @@ func (c *BlazeDatabaseClient) Transaction(queries []string, args [][]interface{}
 
     var results []pgconn.CommandTag
 
-    tx, err := c.Pool.Begin(c.Ctx)
+    tx, err := c.Pool.Begin(c.Context())
     if err != nil {
         return nil, fmt.Errorf("failed to begin transaction: %w", err)
     }
 
     defer func() {
         if p := recover(); p != nil {
-            tx.Rollback(c.Ctx)
+            tx.Rollback(c.Context())
             panic(p)
         } else if err != nil {
-            tx.Rollback(c.Ctx)
+            tx.Rollback(c.Context())
         } else {
-            err = tx.Commit(c.Ctx)
+            err = tx.Commit(c.Context())
         }
     }()
 
     for i, query := range queries {
-        result, execErr := tx.Exec(c.Ctx, query, args[i]...)
+        result, execErr := tx.Exec(c.Context(), query, args[i]...)
         if execErr != nil {
             err = fmt.Errorf("failed to execute query %d: %w", i, execErr)
             return nil, err
@@ -142,7 +160,7 @@ func (c *BlazeDatabaseClient) Transaction(queries []string, args [][]interface{}
 func GenerateClientAccessors(classNames []string) string {
 	var content strings.Builder
 
-	content.WriteString("\n\n// ==================== MODEL CLIENT ACCESSORS ====================\n\n")
+	content.WriteString("\n// ==================== MODEL CLIENT ACCESSORS ====================\n\n")
 
 	for _, className := range classNames {
 		content.WriteString(fmt.Sprintf("func (c *BlazeDatabaseClient) %s() *%sClient {\n", className, className))

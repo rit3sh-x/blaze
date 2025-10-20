@@ -350,28 +350,26 @@ func Desc(field string) OrderFunc {
 
 func GenerateFieldConstants(ast *ast.SchemaAST) string {
 	var res strings.Builder
-	fieldSet := make(map[string]bool)
+
+	res.WriteString("// ==================== FIELD CONSTANTS ====================\n\n")
 
 	for _, cls := range ast.Classes {
+		structName := cls.Name + "FieldsType"
+		varName := cls.Name + "Fields"
+
+		res.WriteString(fmt.Sprintf("type %s struct{}\n\n", structName))
+		res.WriteString(fmt.Sprintf("var %s = %s{}\n\n", varName, structName))
+
 		for _, fld := range cls.Attributes.Fields {
-			if !fld.IsObject() {
-				fieldSet[fld.GetName()] = true
+			if fld.IsObject() {
+				continue
 			}
+			fieldName := utils.ToExportedName(fld.GetName())
+			res.WriteString(fmt.Sprintf("func (%s) %s() string {\n", structName, fieldName))
+			res.WriteString(fmt.Sprintf("\treturn \"%s\"\n", fld.GetName()))
+			res.WriteString("}\n\n")
 		}
 	}
-
-	fields := make([]string, 0, len(fieldSet))
-	for field := range fieldSet {
-		fields = append(fields, field)
-	}
-	sort.Strings(fields)
-
-	res.WriteString("const (\n")
-	for _, field := range fields {
-		constName := "Field" + utils.ToExportedName(field)
-		res.WriteString(fmt.Sprintf("\t%s = \"%s\"\n", constName, field))
-	}
-	res.WriteString(")\n")
 
 	return res.String()
 }
@@ -546,17 +544,23 @@ func GenerateQueryBuilder(cls *class.Class, ast *ast.SchemaAST) string {
 	res.WriteString("\treturn q\n")
 	res.WriteString("}\n\n")
 
-	res.WriteString(fmt.Sprintf("func (q *%sQuery) Find(ctx context.Context) ([]*%s, error) {\n", cls.Name, cls.Name))
+	res.WriteString(fmt.Sprintf("func (q *%sQuery) Find() ([]*%s, error) {\n", cls.Name, cls.Name))
+	res.WriteString("\tctx := q.client.db.Context()\n")
+	res.WriteString("\t_ = ctx\n")
 	res.WriteString("\t// TODO: Implement query execution\n")
 	res.WriteString("\treturn nil, fmt.Errorf(\"not implemented\")\n")
 	res.WriteString("}\n\n")
 
-	res.WriteString(fmt.Sprintf("func (q *%sQuery) First(ctx context.Context) (*%s, error) {\n", cls.Name, cls.Name))
+	res.WriteString(fmt.Sprintf("func (q *%sQuery) First() (*%s, error) {\n", cls.Name, cls.Name))
+	res.WriteString("\tctx := q.client.db.Context()\n")
+	res.WriteString("\t_ = ctx\n")
 	res.WriteString("\t// TODO: Implement query execution\n")
 	res.WriteString("\treturn nil, fmt.Errorf(\"not implemented\")\n")
 	res.WriteString("}\n\n")
 
-	res.WriteString(fmt.Sprintf("func (q *%sQuery) Count(ctx context.Context) (int64, error) {\n", cls.Name))
+	res.WriteString(fmt.Sprintf("func (q *%sQuery) Count() (int64, error) {\n", cls.Name))
+	res.WriteString("\tctx := q.client.db.Context()\n")
+	res.WriteString("\t_ = ctx\n")
 	res.WriteString("\t// TODO: Implement count\n")
 	res.WriteString("\treturn 0, fmt.Errorf(\"not implemented\")\n")
 	res.WriteString("}\n\n")
@@ -589,7 +593,9 @@ func GenerateCreateBuilder(cls *class.Class, ast *ast.SchemaAST) string {
 		res.WriteString("}\n\n")
 	}
 
-	res.WriteString(fmt.Sprintf("func (c *%sCreate) Save(ctx context.Context) (*%s, error) {\n", cls.Name, cls.Name))
+	res.WriteString(fmt.Sprintf("func (c *%sCreate) Save() (*%s, error) {\n", cls.Name, cls.Name))
+	res.WriteString("\tctx := c.client.db.Context()\n")
+	res.WriteString("\t_ = ctx\n")
 	res.WriteString("\t// TODO: Implement insert\n")
 	res.WriteString("\treturn nil, fmt.Errorf(\"not implemented\")\n")
 	res.WriteString("}\n\n")
@@ -628,7 +634,9 @@ func GenerateUpdateBuilder(cls *class.Class, ast *ast.SchemaAST) string {
 		res.WriteString("}\n\n")
 	}
 
-	res.WriteString(fmt.Sprintf("func (u *%sUpdate) Save(ctx context.Context) (int64, error) {\n", cls.Name))
+	res.WriteString(fmt.Sprintf("func (u *%sUpdate) Save() (int64, error) {\n", cls.Name))
+	res.WriteString("\tctx := u.client.db.Context()\n")
+	res.WriteString("\t_ = ctx\n")
 	res.WriteString("\t// TODO: Implement update\n")
 	res.WriteString("\treturn 0, fmt.Errorf(\"not implemented\")\n")
 	res.WriteString("}\n\n")
@@ -662,7 +670,9 @@ func GenerateUpdateOneBuilder(cls *class.Class, ast *ast.SchemaAST) string {
 		res.WriteString("}\n\n")
 	}
 
-	res.WriteString(fmt.Sprintf("func (u *%sUpdateOne) Save(ctx context.Context) (*%s, error) {\n", cls.Name, cls.Name))
+	res.WriteString(fmt.Sprintf("func (u *%sUpdateOne) Save() (*%s, error) {\n", cls.Name, cls.Name))
+	res.WriteString("\tctx := u.client.db.Context()\n")
+	res.WriteString("\t_ = ctx\n")
 	res.WriteString("\t// TODO: Implement update one\n")
 	res.WriteString("\treturn nil, fmt.Errorf(\"not implemented\")\n")
 	res.WriteString("}\n\n")
@@ -684,7 +694,9 @@ func GenerateDeleteBuilder(cls *class.Class, ast *ast.SchemaAST) string {
 	res.WriteString("\treturn d\n")
 	res.WriteString("}\n\n")
 
-	res.WriteString(fmt.Sprintf("func (d *%sDelete) Exec(ctx context.Context) (int64, error) {\n", cls.Name))
+	res.WriteString(fmt.Sprintf("func (d *%sDelete) Exec() (int64, error) {\n", cls.Name))
+	res.WriteString("\tctx := d.client.db.Context()\n")
+	res.WriteString("\t_ = ctx\n")
 	res.WriteString("\t// TODO: Implement delete\n")
 	res.WriteString("\treturn 0, fmt.Errorf(\"not implemented\")\n")
 	res.WriteString("}\n\n")

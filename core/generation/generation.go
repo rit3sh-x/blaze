@@ -131,7 +131,6 @@ func GenerateHooks(schemaAST *ast.SchemaAST) error {
 
 	content.WriteString("package client\n\n")
 	content.WriteString("import (\n")
-	content.WriteString("\t\"context\"\n")
 	content.WriteString("\t\"time\"\n")
 	content.WriteString("\t\"fmt\"\n")
 	content.WriteString(")\n\n")
