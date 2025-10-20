@@ -14,11 +14,11 @@ import (
 )
 
 type BlazeDB struct {
-	Pool *pgxpool.Pool
-	ctx  context.Context
+	Pool   *pgxpool.Pool
+	Ctx    context.Context
 }
 
-func DB(ctx context.Context, envFile string, varName string) (*BlazeDB, error) {
+func DB(ctx context.Context, envFile string) (*BlazeDB, error) {
 	minConns := 0
 	maxConns := 25
 
@@ -28,9 +28,9 @@ func DB(ctx context.Context, envFile string, varName string) (*BlazeDB, error) {
 		fmt.Printf("%sLoaded environment variables from %s%s\n", constants.GREEN, envFile, constants.RESET)
 	}
 
-	dbURI := os.Getenv(varName)
+	dbURI := os.Getenv(constants.DATABASE_URI_ENV)
 	if dbURI == "" {
-		return nil, fmt.Errorf("%sEnvironment variable %q not set%s", constants.RED, varName, constants.RESET)
+		return nil, fmt.Errorf("%sEnvironment variable %q not set%s", constants.RED, constants.DATABASE_URI_ENV, constants.RESET)
 	}
 
 	config, err := pgxpool.ParseConfig(dbURI)
@@ -63,16 +63,5 @@ func DB(ctx context.Context, envFile string, varName string) (*BlazeDB, error) {
 	}
 
 	fmt.Printf("%s✔ Connected to database%s\n", constants.GREEN, constants.RESET)
-	return &BlazeDB{Pool: pool, ctx: ctx}, nil
-}
-
-func (db *BlazeDB) WithContext(ctx context.Context) *BlazeDB {
-	return &BlazeDB{
-		Pool: db.Pool,
-		ctx:  ctx,
-	}
-}
-
-func (db *BlazeDB) Context() context.Context {
-	return db.ctx
+	return &BlazeDB{Pool: pool, Ctx: ctx}, nil
 }

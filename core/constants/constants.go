@@ -8,7 +8,7 @@ const (
 	TYPES_FILE           = CLIENT_DIR + "/types.go"
 	HOOKS_FILE           = CLIENT_DIR + "/hooks.go"
 	CLIENT_FILE          = CLIENT_DIR + "/client.go"
-	UTIL_FILE            = CLIENT_DIR + "/utils.go"
+	UTIL_FILE            = CLIENT_DIR + "/db.go"
 	MIGRATION_TABLE_NAME = "_blaze_migrations"
 	QUERY_FILE_NAME      = "query.sql"
 	DB_MAX_CONNS_ENV     = "DB_MAX_CONNS"

@@ -1,89 +1,78 @@
 package generation
 
 import (
-    "fmt"
-    "os"
-    "sort"
-    "strings"
-
-    "github.com/rit3sh-x/blaze/core/ast"
+    "github.com/rit3sh-x/blaze/core/ast/class"
+    "github.com/rit3sh-x/blaze/core/ast/field"
     "github.com/rit3sh-x/blaze/core/constants"
-    "github.com/rit3sh-x/blaze/core/generation/types"
 )
 
-func GenerateTypes(schemaAST *ast.SchemaAST) error {
-    if schemaAST == nil {
-        return nil
-    }
+func GetUniqueFields(cls *class.Class) []*field.Field {
+    var uniqueFields []*field.Field
+    seen := make(map[string]bool)
 
-    var content strings.Builder
-    globalImports := make(map[string]bool)
-
-    content.WriteString("package client\n\n")
-
-    for _, cls := range schemaAST.Classes {
-        for _, field := range cls.Attributes.Fields {
-            baseType := field.GetBaseType()
-            for _, scalarType := range constants.ScalarTypes {
-                if string(scalarType) == baseType {
-                    if scalarType == constants.DATE || scalarType == constants.TIMESTAMP {
-                        globalImports["time"] = true
-                    }
-                    break
-                }
+    if cls.HasPrimaryKey() {
+        pkFields := cls.GetPrimaryKeyFields()
+        if len(pkFields) == 1 {
+            if f := cls.Attributes.GetFieldByName(pkFields[0]); f != nil {
+                uniqueFields = append(uniqueFields, f)
+                seen[pkFields[0]] = true
             }
         }
     }
 
-    if len(globalImports) > 0 {
-        content.WriteString("import (\n")
-        
-        importList := make([]string, 0, len(globalImports))
-        for imp := range globalImports {
-            importList = append(importList, imp)
-        }
-        sort.Strings(importList)
-        
-        for _, imp := range importList {
-            content.WriteString(fmt.Sprintf("\t\"%s\"\n", imp))
-        }
-        content.WriteString(")\n\n")
-    }
-
-    if len(schemaAST.Enums) > 0 {
-        content.WriteString("// ==================== ENUMS ====================\n\n")
-        
-        enumNames := make([]string, 0, len(schemaAST.Enums))
-        for name := range schemaAST.Enums {
-            enumNames = append(enumNames, name)
-        }
-        sort.Strings(enumNames)
-        
-        for _, enumName := range enumNames {
-            enum := schemaAST.Enums[enumName]
-            enumGen := types.NewEnumGenerator(enum)
-            content.WriteString(enumGen.Generate())
+    for _, field := range cls.Attributes.Fields {
+        fieldName := field.GetName()
+        if field.IsUnique() && !seen[fieldName] {
+            uniqueFields = append(uniqueFields, field)
+            seen[fieldName] = true
         }
     }
 
-    if len(schemaAST.Classes) > 0 {
-        content.WriteString("// ==================== TYPES ====================\n\n")
-
-        for _, cls := range schemaAST.Classes {
-            classGen := types.NewClassGenerator(cls, schemaAST)
-            classCode := classGen.Generate()
-            content.WriteString(classCode)
-            content.WriteString("\n")
+    for _, directive := range cls.Attributes.Directives {
+        if directive.Name == constants.CLASS_ATTR_UNIQUE {
+            fields, err := directive.GetFields()
+            if err != nil || len(fields) != 1 {
+                continue
+            }
+            if f := cls.Attributes.GetFieldByName(fields[0]); f != nil && !seen[fields[0]] {
+                uniqueFields = append(uniqueFields, f)
+                seen[fields[0]] = true
+            }
         }
     }
 
-    if err := os.MkdirAll(constants.CLIENT_DIR, 0755); err != nil {
-        return fmt.Errorf("failed to create directory %s: %v", constants.CLIENT_DIR, err)
+    return uniqueFields
+}
+
+func GetCompositeUniqueConstraints(cls *class.Class) [][]string {
+    var composites [][]string
+
+    if cls.HasPrimaryKey() {
+        pkFields := cls.GetPrimaryKeyFields()
+        if len(pkFields) > 1 {
+            composites = append(composites, pkFields)
+        }
     }
 
-    if err := os.WriteFile(constants.TYPES_FILE, []byte(content.String()), 0644); err != nil {
-        return fmt.Errorf("failed to write types file: %v", err)
+    for _, directive := range cls.Attributes.Directives {
+        if directive.Name == constants.CLASS_ATTR_UNIQUE {
+            fields, err := directive.GetFields()
+            if err != nil || len(fields) < 2 {
+                continue
+            }
+            composites = append(composites, fields)
+        }
     }
 
-    return nil
+    return composites
+}
+
+func GetRelationFields(cls *class.Class) []*field.Field {
+    var relations []*field.Field
+    for _, f := range cls.Attributes.Fields {
+        if f.IsObject() {
+            relations = append(relations, f)
+        }
+    }
+    return relations
 }

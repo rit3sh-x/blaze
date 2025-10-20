@@ -9,6 +9,7 @@ import (
 	"github.com/rit3sh-x/blaze/core/ast/class"
 	"github.com/rit3sh-x/blaze/core/ast/field"
 	"github.com/rit3sh-x/blaze/core/constants"
+	"github.com/rit3sh-x/blaze/core/utils"
 )
 
 type ClassInfo struct {
@@ -38,8 +39,8 @@ func (cg *ClassGenerator) Generate() string {
 	mainType := cg.generateMainType()
 	cg.main.WriteString("\n")
 
-	uniqueType := cg.generateUniqueType()
-	if uniqueType != "" {
+	relationType := cg.generateRelationsType()
+	if relationType != "" {
 		cg.main.WriteString("\n")
 	}
 
@@ -55,41 +56,295 @@ func (cg *ClassGenerator) Generate() string {
 	return cg.main.String()
 }
 
-func (cg *ClassGenerator) generateMainType() string {
-	cg.main.WriteString(fmt.Sprintf("type %s struct {\n", cg.class.Name))
+func (cg *ClassGenerator) GenerateCompositeTypes() string {
+	var content strings.Builder
+	compositeTypes := cg.generateCompositeTypesInternal(&content)
 
-	for _, field := range cg.class.Attributes.Fields {
-		fieldType := cg.getGoType(field)
-		cg.main.WriteString(fmt.Sprintf("\t%s %s `json:\"%s\"`\n",
-			cg.toExportedName(field.GetName()),
-			fieldType,
-			field.GetName()))
+	if len(compositeTypes) > 0 {
+		return content.String()
+	}
+	return ""
+}
+
+func (cg *ClassGenerator) GenerateWhereUniqueInput() string {
+	var content strings.Builder
+	compositeTypes := []string{}
+
+	if cg.class.HasPrimaryKey() {
+		pkFields := cg.class.GetPrimaryKeyFields()
+		if len(pkFields) > 1 {
+			sortedPKFields := make([]string, len(pkFields))
+			copy(sortedPKFields, pkFields)
+			sort.Strings(sortedPKFields)
+
+			typeNameParts := []string{cg.class.Name}
+			for _, pkFieldName := range sortedPKFields {
+				typeNameParts = append(typeNameParts, utils.ToExportedName(pkFieldName))
+			}
+			typeName := strings.Join(typeNameParts, "") + "Composite"
+			compositeTypes = append(compositeTypes, typeName)
+		}
 	}
 
+	for _, directive := range cg.class.Attributes.Directives {
+		if directive.Name == constants.CLASS_ATTR_UNIQUE {
+			fields, err := directive.GetFields()
+			if err != nil || len(fields) < 2 {
+				continue
+			}
+
+			sortedFields := make([]string, len(fields))
+			copy(sortedFields, fields)
+			sort.Strings(sortedFields)
+
+			typeNameParts := []string{cg.class.Name}
+			for _, fieldName := range sortedFields {
+				typeNameParts = append(typeNameParts, utils.ToExportedName(fieldName))
+			}
+			typeName := strings.Join(typeNameParts, "") + "Composite"
+			compositeTypes = append(compositeTypes, typeName)
+		}
+	}
+
+	uniqueFields := cg.getUniqueFields()
+	if len(uniqueFields) == 0 && len(compositeTypes) == 0 {
+		return ""
+	}
+
+	typeName := fmt.Sprintf("%sWhereUniqueInput", cg.class.Name)
+	content.WriteString(fmt.Sprintf("type %s struct {\n", typeName))
+
+	for _, field := range uniqueFields {
+		fieldType := utils.GetGoType(field, cg.ast)
+		fieldName := field.GetName()
+		content.WriteString(fmt.Sprintf("\t%s *%s\n",
+			utils.ToExportedName(fieldName),
+			strings.TrimPrefix(fieldType, "*")))
+	}
+
+	for _, compositeTypeName := range compositeTypes {
+		fieldName := strings.TrimPrefix(compositeTypeName, cg.class.Name)
+		fieldName = strings.TrimSuffix(fieldName, "Composite")
+
+		content.WriteString(fmt.Sprintf("\t%s *%s\n",
+			fieldName,
+			compositeTypeName))
+	}
+
+	content.WriteString("}\n")
+	return content.String()
+}
+
+func (cg *ClassGenerator) generateMainType() string {
+	cg.main.WriteString(fmt.Sprintf("type %s struct {\n", cg.class.Name))
+	relationFields := cg.getRelationFields()
+
+	for _, field := range cg.class.Attributes.Fields {
+		skip := false
+		for _, rf := range relationFields {
+			if rf.GetName() == field.GetName() {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		fieldType := utils.GetGoType(field, cg.ast)
+		cg.main.WriteString(fmt.Sprintf("\t%s %s\n",
+			utils.ToExportedName(field.GetName()),
+			fieldType))
+	}
+
+	if len(relationFields) != 0 {
+		cg.main.WriteString(fmt.Sprintf("\tRelations %sRelations\n", cg.class.Name))
+	}
 	cg.main.WriteString("}\n")
 	return cg.class.Name
 }
 
-func (cg *ClassGenerator) generateUniqueType() string {
-	uniqueFields := cg.getUniqueFields()
-	if len(uniqueFields) == 0 {
-		return ""
+func (cg *ClassGenerator) generateCompositeTypesInternal(content *strings.Builder) []string {
+	var compositeTypes []string
+
+	if cg.class.HasPrimaryKey() {
+		pkFields := cg.class.GetPrimaryKeyFields()
+		if len(pkFields) > 1 {
+			sortedPKFields := make([]string, len(pkFields))
+			copy(sortedPKFields, pkFields)
+			sort.Strings(sortedPKFields)
+
+			typeNameParts := []string{cg.class.Name}
+			for _, pkFieldName := range sortedPKFields {
+				typeNameParts = append(typeNameParts, utils.ToExportedName(pkFieldName))
+			}
+			typeName := strings.Join(typeNameParts, "") + "Composite"
+
+			content.WriteString(fmt.Sprintf("type %s struct {\n", typeName))
+			for _, pkFieldName := range sortedPKFields {
+				if f := cg.class.Attributes.GetFieldByName(pkFieldName); f != nil {
+					fieldType := utils.GetGoType(f, cg.ast)
+					fieldType = strings.TrimPrefix(fieldType, "*")
+					content.WriteString(fmt.Sprintf("\t%s %s\n",
+						utils.ToExportedName(pkFieldName),
+						fieldType))
+				}
+			}
+			content.WriteString("}\n\n")
+
+			compositeTypes = append(compositeTypes, typeName)
+		}
 	}
 
-	typeName := fmt.Sprintf("%sUnique", cg.class.Name)
-	cg.main.WriteString(fmt.Sprintf("type %s struct {\n", typeName))
+	for _, directive := range cg.class.Attributes.Directives {
+		if directive.Name == constants.CLASS_ATTR_UNIQUE {
+			fields, err := directive.GetFields()
+			if err != nil || len(fields) < 2 {
+				continue
+			}
 
-	for _, field := range uniqueFields {
-		if !cg.isBaseTypeOrEnum(field) {
+			sortedFields := make([]string, len(fields))
+			copy(sortedFields, fields)
+			sort.Strings(sortedFields)
+
+			typeNameParts := []string{cg.class.Name}
+			for _, fieldName := range sortedFields {
+				typeNameParts = append(typeNameParts, utils.ToExportedName(fieldName))
+			}
+			typeName := strings.Join(typeNameParts, "") + "Composite"
+
+			content.WriteString(fmt.Sprintf("type %s struct {\n", typeName))
+			for _, fieldName := range sortedFields {
+				field := cg.class.Attributes.GetFieldByName(fieldName)
+				if field != nil {
+					fieldType := utils.GetGoType(field, cg.ast)
+					fieldType = strings.TrimPrefix(fieldType, "*")
+					content.WriteString(fmt.Sprintf("\t%s %s\n",
+						utils.ToExportedName(fieldName),
+						fieldType))
+				}
+			}
+			content.WriteString("}\n\n")
+
+			compositeTypes = append(compositeTypes, typeName)
+		}
+	}
+
+	relationComposites := cg.generateRelationCompositeType(content)
+	compositeTypes = append(compositeTypes, relationComposites...)
+
+	return compositeTypes
+}
+
+func (cg *ClassGenerator) generateRelationCompositeType(content *strings.Builder) []string {
+	var compositeTypes []string
+	relationFields := cg.getRelationFields()
+
+	for _, relField := range relationFields {
+		baseType := relField.GetBaseType()
+		relatedClass := cg.ast.GetClassByName(baseType)
+
+		if relatedClass == nil {
 			continue
 		}
 
-		fieldType := cg.getGoType(field)
-		fieldType = strings.TrimPrefix(fieldType, "*")
-		fieldType = strings.TrimPrefix(fieldType, "[]")
+		if relField.HasRelation() {
+			relation := relField.AttributeDefinition.Relation
+			if relation != nil && len(relation.From) > 1 {
+				sortedFields := make([]string, len(relation.From))
+				copy(sortedFields, relation.From)
+				sort.Strings(sortedFields)
+
+				typeNameParts := []string{cg.class.Name}
+				for _, fieldName := range sortedFields {
+					typeNameParts = append(typeNameParts, utils.ToExportedName(fieldName))
+				}
+				typeName := strings.Join(typeNameParts, "") + "Composite"
+
+				alreadyExists := false
+				for _, existing := range compositeTypes {
+					if existing == typeName {
+						alreadyExists = true
+						break
+					}
+				}
+
+				if !alreadyExists {
+					content.WriteString(fmt.Sprintf("type %s struct {\n", typeName))
+					for _, fieldName := range sortedFields {
+						field := cg.class.Attributes.GetFieldByName(fieldName)
+						if field != nil {
+							fieldType := utils.GetGoType(field, cg.ast)
+							fieldType = strings.TrimPrefix(fieldType, "*")
+							content.WriteString(fmt.Sprintf("\t%s %s\n",
+								utils.ToExportedName(fieldName),
+								fieldType))
+						}
+					}
+					content.WriteString("}\n\n")
+					compositeTypes = append(compositeTypes, typeName)
+				}
+			}
+		} else {
+			for _, relatedField := range relatedClass.Attributes.Fields {
+				if relatedField.GetBaseType() == cg.class.Name && relatedField.HasRelation() {
+					relation := relatedField.AttributeDefinition.Relation
+					if relation != nil && len(relation.To) > 1 {
+						sortedFields := make([]string, len(relation.To))
+						copy(sortedFields, relation.To)
+						sort.Strings(sortedFields)
+
+						typeNameParts := []string{cg.class.Name}
+						for _, fieldName := range sortedFields {
+							typeNameParts = append(typeNameParts, utils.ToExportedName(fieldName))
+						}
+						typeName := strings.Join(typeNameParts, "") + "Composite"
+
+						alreadyExists := false
+						for _, existing := range compositeTypes {
+							if existing == typeName {
+								alreadyExists = true
+								break
+							}
+						}
+
+						if !alreadyExists {
+							content.WriteString(fmt.Sprintf("type %s struct {\n", typeName))
+							for _, fieldName := range sortedFields {
+								field := cg.class.Attributes.GetFieldByName(fieldName)
+								if field != nil {
+									fieldType := utils.GetGoType(field, cg.ast)
+									fieldType = strings.TrimPrefix(fieldType, "*")
+									content.WriteString(fmt.Sprintf("\t%s %s\n",
+										utils.ToExportedName(fieldName),
+										fieldType))
+								}
+							}
+							content.WriteString("}\n\n")
+							compositeTypes = append(compositeTypes, typeName)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return compositeTypes
+}
+
+func (cg *ClassGenerator) generateRelationsType() string {
+	relationFields := cg.getRelationFields()
+	if len(relationFields) == 0 {
+		return ""
+	}
+
+	typeName := fmt.Sprintf("%sRelations", cg.class.Name)
+	cg.main.WriteString(fmt.Sprintf("type %s struct {\n", typeName))
+
+	for _, field := range relationFields {
+		fieldType := utils.GetGoType(field, cg.ast)
 		fieldName := field.GetName()
 		cg.main.WriteString(fmt.Sprintf("\t%s %s\n",
-			cg.toExportedName(fieldName),
+			utils.ToExportedName(fieldName),
 			fieldType))
 	}
 
@@ -114,27 +369,20 @@ func (cg *ClassGenerator) generateRelationPermutations(mainType string) {
 func (cg *ClassGenerator) generatePermutationType(mainType string, relations []*field.Field) {
 	relationNames := make([]string, len(relations))
 	for i, rel := range relations {
-		relationNames[i] = cg.toExportedName(rel.GetName())
+		relationNames[i] = utils.ToExportedName(rel.GetName())
 	}
 	sort.Strings(relationNames)
 
 	typeName := mainType + "With" + strings.Join(relationNames, "And")
 
 	cg.main.WriteString(fmt.Sprintf("type %s struct {\n", typeName))
-
 	cg.main.WriteString(fmt.Sprintf("\t%s\n", mainType))
 
-	sortedRelations := make([]*field.Field, len(relations))
-	copy(sortedRelations, relations)
-	sort.Slice(sortedRelations, func(i, j int) bool {
-		return cg.toExportedName(sortedRelations[i].GetName()) < cg.toExportedName(sortedRelations[j].GetName())
-	})
-
-	for _, rel := range sortedRelations {
-		relationType := cg.getGoType(rel)
+	for _, rel := range relations {
+		relationType := utils.GetGoType(rel, cg.ast)
 		fieldName := rel.GetName()
 		cg.main.WriteString(fmt.Sprintf("\t%s %s\n",
-			fieldName,
+			utils.ToExportedName(fieldName),
 			relationType))
 	}
 
@@ -145,18 +393,17 @@ func (cg *ClassGenerator) getRelationFields() []*field.Field {
 	var relations []*field.Field
 	for _, f := range cg.class.Attributes.Fields {
 		baseType := f.GetBaseType()
-		if cg.getScalarType(baseType) == "" && cg.ast.GetEnumByName(baseType) == nil {
+		if utils.GetScalarType(baseType) == "" && cg.ast.GetEnumByName(baseType) == nil {
 			relations = append(relations, f)
 		}
 	}
 	return relations
 }
 
-
 func (cg *ClassGenerator) getCombinations(relations []*field.Field) [][]*field.Field {
 	var result [][]*field.Field
-
 	n := len(relations)
+
 	for i := 1; i < (1 << n); i++ {
 		var combo []*field.Field
 		for j := 0; j < n; j++ {
@@ -164,96 +411,15 @@ func (cg *ClassGenerator) getCombinations(relations []*field.Field) [][]*field.F
 				combo = append(combo, relations[j])
 			}
 		}
+
+		sort.Slice(combo, func(a, b int) bool {
+			return utils.ToExportedName(combo[a].GetName()) < utils.ToExportedName(combo[b].GetName())
+		})
+
 		result = append(result, combo)
 	}
 
 	return result
-}
-
-func (cg *ClassGenerator) getGoType(field *field.Field) string {
-	baseType := field.GetBaseType()
-	goType := ""
-
-	if scalarType := cg.getScalarType(baseType); scalarType != "" {
-		goType = cg.scalarToGoType(scalarType)
-	} else if cg.ast.GetEnumByName(baseType) != nil {
-		goType = baseType
-	} else if cg.ast.GetClassByName(baseType) != nil {
-		goType = baseType
-	} else {
-		goType = "interface{}"
-	}
-
-	if field.IsArray() {
-		goType = "[]" + goType
-	}
-
-	if field.IsOptional() && !field.IsArray() {
-		goType = "*" + goType
-	}
-
-	return goType
-}
-
-func (cg *ClassGenerator) getScalarType(typeName string) string {
-	for _, scalarType := range constants.ScalarTypes {
-		if string(scalarType) == typeName {
-			return typeName
-		}
-	}
-	return ""
-}
-
-func (cg *ClassGenerator) scalarToGoType(scalarType string) string {
-	switch constants.ScalarType(scalarType) {
-	case constants.INT:
-		return "int32"
-	case constants.BIGINT:
-		return "int64"
-	case constants.SMALLINT:
-		return "int16"
-	case constants.FLOAT:
-		return "float64"
-	case constants.NUMERIC:
-		return "float64"
-	case constants.STRING:
-		return "string"
-	case constants.BOOLEAN:
-		return "bool"
-	case constants.DATE:
-		return "time.Time"
-	case constants.TIMESTAMP:
-		return "time.Time"
-	case constants.JSON:
-		return "interface{}"
-	case constants.BYTES:
-		return "[]byte"
-	case constants.CHAR:
-		return "string"
-	default:
-		return "interface{}"
-	}
-}
-
-func (cg *ClassGenerator) toExportedName(name string) string {
-	if len(name) == 0 {
-		return name
-	}
-	return strings.ToUpper(name[:1]) + name[1:]
-}
-
-func (cg *ClassGenerator) isBaseTypeOrEnum(field *field.Field) bool {
-	baseType := field.GetBaseType()
-
-	if cg.getScalarType(baseType) != "" {
-		return true
-	}
-
-	if cg.ast.GetEnumByName(baseType) != nil {
-		return true
-	}
-
-	return false
 }
 
 func (cg *ClassGenerator) getUniqueFields() []*field.Field {
@@ -262,10 +428,10 @@ func (cg *ClassGenerator) getUniqueFields() []*field.Field {
 
 	if cg.class.HasPrimaryKey() {
 		pkFields := cg.class.GetPrimaryKeyFields()
-		for _, pkFieldName := range pkFields {
-			if f := cg.class.Attributes.GetFieldByName(pkFieldName); f != nil {
+		if len(pkFields) == 1 {
+			if f := cg.class.Attributes.GetFieldByName(pkFields[0]); f != nil {
 				uniqueFields = append(uniqueFields, f)
-				seen[pkFieldName] = true
+				seen[pkFields[0]] = true
 			}
 		}
 	}
@@ -275,6 +441,21 @@ func (cg *ClassGenerator) getUniqueFields() []*field.Field {
 		if field.IsUnique() && !seen[fieldName] {
 			uniqueFields = append(uniqueFields, field)
 			seen[fieldName] = true
+		}
+	}
+
+	for _, directive := range cg.class.Attributes.Directives {
+		if directive.Name == constants.CLASS_ATTR_UNIQUE {
+			fields, err := directive.GetFields()
+			if err != nil {
+				continue
+			}
+			if len(fields) == 1 {
+				if f := cg.class.Attributes.GetFieldByName(fields[0]); f != nil && !seen[fields[0]] {
+					uniqueFields = append(uniqueFields, f)
+					seen[fields[0]] = true
+				}
+			}
 		}
 	}
 
